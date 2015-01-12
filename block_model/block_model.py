@@ -16,8 +16,6 @@ except ImportError:
     print('Numba was not found. Slow functions will be used')
 import numpy as np
 
-from simanneal import Annealer
-
 
 
 if numba:
@@ -193,49 +191,3 @@ class SubstrateReceptorInteraction1D(object):
         return min(cnt_r, l_r) * np.log(2)        
 
 
-
-class OptimalReceptors(Annealer):
-    """ class for finding optimal receptor distribution """
-    
-    Tmax =  1e3     # Max (starting) temperature
-    Tmin =  1e-4    # Min (ending) temperature
-    steps = 1e5     # Number of iterations
-    updates = 2     # Number of outputs
-    copy_strategy = 'method'
-
-
-    def move(self):
-        """ change a single bit in any of the receptor vectors """
-        # TODO: only update the single row that changed in the energy matrix
-        self.state.mutate_receptors()
-# 
-#         lx, ly = self.state.shape
-#         x = random.randint(0, lx - 1)
-#         y = random.randint(0, ly - 1)
-#         # restrict to case K=2 first => flip color
-#         self.state[x, y] = 1 - self.state[x, y]
-       
-        
-#     def get_energies(self, substrates, receptors):
-#         """ this assumes small receptors and large substrates
-#         TODO: lift this constraint
-#         """
-#         # get dimensions
-#         cnt_s, l_s = substrates.shape
-#         cnt_r, l_r = receptors.shape
-# 
-#         # repeat substrate to implement periodic boundary conditions
-#         substrates = np.repeat(substrates, 2, axis=1)
-# 
-#         # calculate the energies with the sliding window
-#         Es = np.array([
-#             np.sum(substrates[:, np.newaxis, i:i+l_r] == receptors[np.newaxis, :, :], axis=2)
-#             for i in xrange(l_s)
-#         ])
-# 
-#         return Es.max(axis=0)
-    
-        
-    def energy(self):
-        """ returns the energy of the current state """
-        return -self.state.get_mutual_information()
