@@ -10,7 +10,6 @@ import random
 import math
 
 import numpy as np
-
 np_version = [int(t) for t in np.__version__.split('.')]
 if np_version >= [1, 9]:
     # implement a count function using numpy
@@ -21,6 +20,7 @@ else:
     from collections import Counter
     def count_items(arr):
         return list(Counter(arr).itervalues())
+
 
 # try importing numba for speeding up calculations
 try:
@@ -113,7 +113,7 @@ class SubstrateReceptorInteraction1D(object):
         try:
             return self._cache['substrates2']
         except KeyError:
-            self._cache['substrates2'] = np.repeat(self.substrates, 2, axis=1)
+            self._cache['substrates2'] = np.c_[self.substrates, self.substrates]
             return self._cache['substrates2']
         
 
@@ -135,10 +135,34 @@ class SubstrateReceptorInteraction1D(object):
 
         return Es.max(axis=0)
            
+
+    def get_energies_new(self):
+        """ this assumes small receptors and large substrates
+        TODO: lift this constraint
+        """
+        # get dimensions
+        l_s = self.substrates.shape[1]
+        l_r = self.receptors.shape[1]
+
+        # check all substrates versus all receptors
+        for x, substrate in enumerate(self.substrates):
+            for y, receptor in enumerate(self.receptors):
+                overlap_max = 0
+                # find the maximum over all starting positions
+                for start in xrange(l_s):
+                    overlap = 0
+                    # count overlap along receptor length
+                    for k in xrange(l_r):
+                        if substrate[(start + k) % l_s] == receptor[k]:
+                            overlap += 1
+                    overlap_max = max(overlap_max, overlap)
+                self.energies[x, y] = overlap_max
+                      
         
     def randomize_receptors(self):
         """ choose a completely new set of receptors """
-        self.receptors = np.random.randint(0, 2, size=self.receptors.shape)
+        self.receptors = np.random.randint(0, self.colors,
+                                           size=self.receptors.shape)
         self.energies = self.get_energies()
     
     
