@@ -13,8 +13,8 @@ from simanneal import Annealer
 class ReceptorOptimizer(Annealer):
     """ class for finding optimal receptor distribution """
     
-    Tmax =  1e3     # Max (starting) temperature
-    Tmin =  1e-4    # Min (ending) temperature
+    Tmax =  1e2     # Max (starting) temperature
+    Tmin =  1e-2    # Min (ending) temperature
     steps = 1e5     # Number of iterations
     updates = 2     # Number of outputs
     copy_strategy = 'method'
@@ -28,3 +28,4 @@ class ReceptorOptimizer(Annealer):
     def energy(self):
         """ returns the energy of the current state """
         return -self.state.get_mutual_information()
+    

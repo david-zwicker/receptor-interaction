@@ -9,13 +9,24 @@ from __future__ import division
 import random
 import math
 
+import numpy as np
+
+np_version = [int(t) for t in np.__version__.split('.')]
+if np_version >= [1, 9]:
+    # implement a count function using numpy
+    def count_items(arr):
+        return np.unique(arr, return_counts=True)[1]
+else:
+    # implement a count function using python Counter
+    from collections import Counter
+    def count_items(arr):
+        return list(Counter(arr).itervalues())
+
 try:
     import numba
 except ImportError:
     numba = None
     print('Numba was not found. Slow functions will be used')
-import numpy as np
-
 
 
 if numba:
@@ -62,17 +73,22 @@ class SubstrateReceptorInteraction1D(object):
         
     clone_cache_keys = ('energies2',)
     
-    def __init__(self, substrates, receptors, cache=None, energies=None):
+    def __init__(self, substrates, receptors, colors=None, cache=None,
+                 energies=None):
         self.substrates = substrates
         self.receptors = receptors
-        if cache:
-            self._cache = cache
+        if colors is None:
+            self.colors = max(substrates.max(), receptors.max()) + 1
         else:
+            self.colors = colors
+        if cache is None:
             self._cache = {}
-        if energies is not None:
-            self.energies = energies
         else:
+            self._cache = cache
+        if energies is None:
             self.energies = self.get_energies()
+        else:
+            self.energies = energies
         
         
     def __repr__(self):
@@ -87,7 +103,7 @@ class SubstrateReceptorInteraction1D(object):
         be mutated. The substrates will be shared between this object and its
         copy """
         return self.__class__(self.substrates, self.receptors.copy(),
-                              self._cache, self.energies.copy())
+                              self.colors, self._cache, self.energies.copy())
         
         
     @property
@@ -118,15 +134,37 @@ class SubstrateReceptorInteraction1D(object):
         return Es.max(axis=0)
            
         
+    def randomize_receptors(self):
+        """ choose a completely new set of receptors """
+        self.receptors = np.random.randint(0, 2, size=self.receptors.shape)
+        self.energies = self.get_energies()
+    
+    
+    @property
+    def color_alternatives(self):
+        """ return repeated substrates to implement periodic boundary
+        conditions """
+        if 'color_alternatives' not in self._cache:
+            colors = [np.r_[0:c, c+1:self.colors]
+                      for c in xrange(self.colors)] 
+            self._cache['color_alternatives'] = colors
+        return self._cache['color_alternatives']
+    
+        
     def mutate_receptors(self):
-        """ mutate the receptors """
+        """ mutate a single, random receptor """
         cnt_r, l_r = self.receptors.shape
 
         # choose one point on one receptor that will be mutated        
         x = random.randint(0, cnt_r - 1)
         y = random.randint(0, l_r - 1)
-        # restricted to two colors => flip color
-        self.receptors[x, y] = 1 - self.receptors[x, y]
+        if self.colors == 2:
+            # restricted to two colors => flip color
+            self.receptors[x, y] = 1 - self.receptors[x, y]
+        else:
+            # more than two colors => use random choice
+            clrs = self.color_alternatives[self.receptors[x, y]]
+            self.receptors[x, y] = np.random.choice(clrs)
 
         # recalculate the interaction energies of the changed receptor        
         _interaction_substrates_receptor(self.substrates2,
@@ -148,7 +186,7 @@ class SubstrateReceptorInteraction1D(object):
         probs = np.exp(self.energies/self.temperature)
         # normalize for each substrate across all receptors
         probs /= np.sum(probs, axis=1)[:, None]
-        return probs        
+        return probs     
     
         
     def get_output_vector(self):
@@ -159,8 +197,17 @@ class SubstrateReceptorInteraction1D(object):
         cnt_r = probs.shape[1]
         # threshold
         output = (probs > self.threshold)
-        # convert to integer
-        vec_r = 2**np.arange(cnt_r)
+        
+        
+#         res = 0
+#         base = 1
+#         for out in output:
+#             res += out*base
+#             base *= self.colors
+#             
+#         return res
+        # encode output in single integer
+        vec_r = self.colors**np.arange(cnt_r)
         return np.dot(output, vec_r) 
         
     
@@ -170,7 +217,7 @@ class SubstrateReceptorInteraction1D(object):
         output = self.get_output_vector()
         
         # determine the contribution from the frequency distribution        
-        _, fs = np.unique(output, return_counts=True)
+        fs = count_items(output)
         # assert cnt_s == sum(fs)
         logsum_a = np.sum(fs*np.log(fs))
         
@@ -188,6 +235,5 @@ class SubstrateReceptorInteraction1D(object):
         # there is a vector space of possible receptors, spanned
         # by the dim=min(cnt_r, l_r) basis vectors
         # => the possible number of receptors is 2^dim
-        return min(cnt_r, l_r) * np.log(2)        
-
+        return min(cnt_r, l_r) * np.log(2)
 
