@@ -22,6 +22,7 @@ else:
     def count_items(arr):
         return list(Counter(arr).itervalues())
 
+# try importing numba for speeding up calculations
 try:
     import numba
 except ImportError:
@@ -47,7 +48,6 @@ if numba:
                         overlap += 1
                 overlap_max = max(overlap_max, overlap)
             out[s] = overlap_max
-
 
 else:
     # define the slow substitute functions working without numba
@@ -110,9 +110,11 @@ class SubstrateReceptorInteraction1D(object):
     def substrates2(self):
         """ return repeated substrates to implement periodic boundary
         conditions """
-        if 'substrates2' not in self._cache:
+        try:
+            return self._cache['substrates2']
+        except KeyError:
             self._cache['substrates2'] = np.repeat(self.substrates, 2, axis=1)
-        return self._cache['substrates2']
+            return self._cache['substrates2']
         
 
     def get_energies(self):
@@ -188,27 +190,27 @@ class SubstrateReceptorInteraction1D(object):
         probs /= np.sum(probs, axis=1)[:, None]
         return probs     
     
+    
+    @property
+    def color_base(self):
+        """ return repeated substrates to implement periodic boundary
+        conditions """
+        try:
+            return self._cache['color_base']
+        except KeyError:
+            cnt_r = len(self.receptors)
+            self._cache['color_base'] = self.colors**np.arange(cnt_r)
+            return self._cache['color_base']
+        
         
     def get_output_vector(self):
         """ calculate output vector for given receptors """
         # calculate the resulting binding characteristics
         probs = self.get_binding_probabilities()
         # threshold to get the response
-        cnt_r = probs.shape[1]
-        # threshold
         output = (probs > self.threshold)
-        
-        
-#         res = 0
-#         base = 1
-#         for out in output:
-#             res += out*base
-#             base *= self.colors
-#             
-#         return res
         # encode output in single integer
-        vec_r = self.colors**np.arange(cnt_r)
-        return np.dot(output, vec_r) 
+        return np.dot(output, self.color_base) 
         
     
     def get_mutual_information(self):
@@ -228,12 +230,9 @@ class SubstrateReceptorInteraction1D(object):
     @property
     def mutual_information_max(self):
         """ return upper bound for mutual information """
-        #TODO determine theoretical mutual information based on 
-        # length and number of receptors/substrates
-        
         cnt_r, l_r = self.receptors.shape
         # there is a vector space of possible receptors, spanned
         # by the dim=min(cnt_r, l_r) basis vectors
-        # => the possible number of receptors is 2^dim
-        return min(cnt_r, l_r) * np.log(2)
+        # => the possible number of receptors is colors^dim
+        return min(cnt_r, l_r) * np.log(self.colors)
 
