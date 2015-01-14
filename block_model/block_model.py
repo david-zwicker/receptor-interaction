@@ -72,13 +72,41 @@ def remove_redundant_substrates(substrates):
     base = colors**np.arange(l_s)
     
     # calculate an characteristic number for each substrate
-    character = [min(np.dot(s2[k:k + l_s], base)
-                     for k in xrange(l_s))
-                 for s2 in np.c_[substrates, substrates]]
+    characters = [min(np.dot(s2[k:k + l_s], base)
+                      for k in xrange(l_s))
+                  for s2 in np.c_[substrates, substrates]]
     
-    _, idx = np.unique(character, return_index=True)
+    _, idx = np.unique(characters, return_index=True)
     return substrates[idx]
+
+
+
+def choose_unique_substrates(colors, l_s, cnt_s):
+    """ chooses `cnt_s` unique substrates consisting of `l_s` blocks with
+    `colors` unique colors """
+    base = colors**np.arange(l_s)
     
+    substrates, characters = [], set()
+    counter = 0
+    while len(substrates) < cnt_s:
+        # choose a random substrate and determine its character
+        s = np.random.randint(0, colors, size=l_s)
+        s2 = np.r_[s, s]
+        character = min(np.dot(s2[k:k + l_s], base)
+                        for k in xrange(l_s))
+        counter += 1
+        # add the substrate if it is not already in the list
+        if character not in characters:
+            substrates.append(s)
+            characters.add(character)
+            counter = 0
+            
+        # interrupt the search if no substrate can be found
+        if counter > 1000:
+            raise RuntimeError('Cannot find %d substrates of length %d' % 
+                               (cnt_s, l_s))
+    return substrates
+
 
 
 class SubstrateReceptorInteraction1D(object):
