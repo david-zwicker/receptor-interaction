@@ -64,6 +64,23 @@ else:
 
 
 
+def remove_redundant_substrates(substrates):
+    """ removes substrates that are the same (because of periodic boundary
+    conditions) """
+    l_s = len(substrates[0])
+    colors = substrates.max() + 1
+    base = colors**np.arange(l_s)
+    
+    # calculate an characteristic number for each substrate
+    character = [min(np.dot(s2[k:k + l_s], base)
+                     for k in xrange(l_s))
+                 for s2 in np.c_[substrates, substrates]]
+    
+    _, idx = np.unique(character, return_index=True)
+    return substrates[idx]
+    
+
+
 class SubstrateReceptorInteraction1D(object):
     """ class that evaluates the interaction energies between a set of
     substrates and a set of receptors.
@@ -138,7 +155,7 @@ class SubstrateReceptorInteraction1D(object):
 
     def get_energies_new(self):
         """ this assumes small receptors and large substrates
-        TODO: lift this constraint
+        TODO: use this loop version to implement faster version with numba
         """
         # get dimensions
         l_s = self.substrates.shape[1]
@@ -254,6 +271,7 @@ class SubstrateReceptorInteraction1D(object):
     @property
     def mutual_information_max(self):
         """ return upper bound for mutual information """
+        cnt_s = self.substrates.shape
         cnt_r, l_r = self.receptors.shape
         # there is a vector space of possible receptors, spanned
         # by the dim=min(cnt_r, l_r) basis vectors
