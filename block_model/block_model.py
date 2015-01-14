@@ -120,8 +120,8 @@ class SubstrateReceptorInteraction1D(object):
     
     def __init__(self, substrates, receptors, colors=None, cache=None,
                  energies=None):
-        self.substrates = substrates
-        self.receptors = receptors
+        self.substrates = np.asarray(substrates)
+        self.receptors = np.asarray(receptors)
         if colors is None:
             self.colors = max(substrates.max(), receptors.max()) + 1
         else:
