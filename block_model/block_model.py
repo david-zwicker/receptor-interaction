@@ -271,10 +271,16 @@ class SubstrateReceptorInteraction1D(object):
     @property
     def mutual_information_max(self):
         """ return upper bound for mutual information """
-        cnt_s = self.substrates.shape
-        cnt_r, l_r = self.receptors.shape
+        # maximal mutual information restricted by receptors
         # there is a vector space of possible receptors, spanned
         # by the dim=min(cnt_r, l_r) basis vectors
         # => the possible number of receptors is colors^dim
-        return min(cnt_r, l_r) * np.log(self.colors)
+        cnt_r, l_r = self.receptors.shape
+        MI_receptors = min(cnt_r, l_r) * np.log(self.colors)
+        
+        # maximal mutual information restricted by substrates
+        cnt_s = self.substrates.shape
+        MI_substrates = np.log(cnt_s)
+        
+        return min(MI_receptors, MI_substrates)
 
