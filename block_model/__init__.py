@@ -1,4 +1,2 @@
-from block_model import (SubstrateReceptorInteraction1D,
-                         remove_redundant_substrates,
-                         choose_unique_substrates)
-from optimizer import ReceptorOptimizer
+from block_model.block_model_1D import *
+from optimizer import ReceptorOptimizerExhaustive, ReceptorOptimizerAnnealing
