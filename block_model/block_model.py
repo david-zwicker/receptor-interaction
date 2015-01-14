@@ -279,7 +279,7 @@ class SubstrateReceptorInteraction1D(object):
         MI_receptors = min(cnt_r, l_r) * np.log(self.colors)
         
         # maximal mutual information restricted by substrates
-        cnt_s = self.substrates.shape
+        cnt_s = self.substrates.shape[0]
         MI_substrates = np.log(cnt_s)
         
         return min(MI_receptors, MI_substrates)
