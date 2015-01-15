@@ -188,8 +188,8 @@ class ChainsInteraction(object):
     def __repr__(self):
         cnt_s, l_s = self.substrates.shape
         cnt_r, l_r = self.receptors.shape
-        return ('%s(%d substrates of l=%d, %d receptors of l=%d)' %
-                (self.__class__.__name__, cnt_s, l_s, cnt_r, l_r))
+        return ('%s(%d Substrates(l=%d), %d Receptors(l=%d), colors=%d)' %
+                (self.__class__.__name__, cnt_s, l_s, cnt_r, l_r, self.colors))
         
 
     def check_consistency(self):

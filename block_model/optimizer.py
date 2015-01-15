@@ -6,8 +6,6 @@ Created on Jan 12, 2015
 
 from __future__ import division
 
-import numpy as np
-
 from simanneal import Annealer
 
 
@@ -28,7 +26,7 @@ class ReceptorOptimizerExhaustive(object):
         with the achieved mutual information.
         Extra information about the optimization procedure is stored in the
         `info` dictionary of this object """
-        state_best, MI_best = None, -np.inf
+        state_best, MI_best = None, -1
         for state in self.state_collection:
             MI = state.get_mutual_information()
             if MI > MI_best:
