@@ -2,6 +2,18 @@
 Created on Jan 12, 2015
 
 @author: David Zwicker <dzwicker@seas.harvard.edu>
+
+Module for handling the interaction between a set of substrates and
+corresponding receptors. Both substrates and receptors are described by chains
+of chains, where each chain can have a color. We consider periodic boundary
+conditions, such that these chains are equivalent to necklaces in combinatorics.
+
+Each chain is represented by an integer numpy array of length l. Sets of 
+chains are represented by a 2D-numpy array where the first dimension
+corresponds to different chains.
+
+Special objects are used to represent the set of all unique chains and the
+interaction between sets of substrate and receptor chains.
 '''
 
 from __future__ import division
@@ -10,21 +22,24 @@ import fractions
 import itertools
 import random
 import math
+import numpy as np
 import timeit
 
 from scipy.misc import comb
 
-import numpy as np
 np_version = [int(t) for t in np.__version__.split('.')]
 if np_version >= [1, 9]:
     # implement a count function using numpy
     def count_items(arr):
+        """ returns the multiplicity of each unique item in the array """
         return np.unique(arr, return_counts=True)[1]
+    
 else:
     # implement a count function using python Counter
-    from collections import Counter
+    from scipy.stats import itemfreq
     def count_items(arr):
-        return list(Counter(arr).itervalues())
+        """ returns the multiplicity of each unique item in the array """
+        return itemfreq(arr)[:, 1]
 
 
 # try importing numba for speeding up calculations
@@ -36,104 +51,132 @@ except ImportError:
 
 
 
-def euler_phi(n):
-    """ evaluates the Euler phi function for argument `n`
-    See http://en.wikipedia.org/wiki/Euler%27s_totient_function
-    Implementation based on http://stackoverflow.com/a/18114286/932593
-    """
-    amount = 0
-
-    for k in xrange(1, n + 1):
-        if fractions.gcd(n, k) == 1:
-            amount += 1
-
-    return amount
-
-
-
-def blocks1D_remove_redundant(blocks):
-    """ removes blocks that are the same (because of periodic boundary
+def chains_remove_redundant(chains):
+    """ removes chains that are the same (because of periodic boundary
     conditions) """
-    l_s = len(blocks[0])
-    colors = blocks.max() + 1
+    l_s = len(chains[0])
+    colors = chains.max() + 1
     base = colors**np.arange(l_s)
     
     # calculate an characteristic number for each substrate
     characters = [min(np.dot(s2[k:k + l_s], base)
                       for k in xrange(l_s))
-                  for s2 in np.c_[blocks, blocks]]
+                  for s2 in np.c_[chains, chains]]
     
     _, idx = np.unique(characters, return_index=True)
-    return blocks[idx]
+    return chains[idx]
 
-
-
-def blocks1D_choose_unique(cnt, l, colors=2):
-    """ chooses `cnt` unique substrates consisting of `l` blocks with
-    `colors` unique colors """
-    base = colors ** np.arange(l)
     
-    substrates, characters = [], set()
-    counter = 0
-    while len(substrates) < cnt:
-        # choose a random substrate and determine its character
-        s = np.random.randint(0, colors, size=l)
-        s2 = np.r_[s, s]
-        character = min(np.dot(s2[k:k + l], base)
-                        for k in xrange(l))
-        counter += 1
-        # add the substrate if it is not already in the list
-        if character not in characters:
-            substrates.append(s)
-            characters.add(character)
-            counter = 0
-            
-        # interrupt the search if no substrate can be found
-        if counter > 1000:
-            raise RuntimeError('Cannot find %d substrates of length %d' % 
-                               (cnt, l))
-    return substrates
+
+class Chains(object):
+    """ class that represents all chains of length l """
+    
+    def __init__(self, l, colors=2):
+        self.l = l
+        self.colors = colors
+        
+        
+    def __len__(self):
+        """ returns the number of unique chains of length l
+        This number is equivalent to len(chains_get_unique(l, colors))
+        However, we use a more efficient mathematical solution based on Eq. 1 in
+            F. Ruskey, C. Savage, T. Min Yih Wang, J. of Algorithms 13 (1992)
+        """
+        Nb = 0
+        for d in xrange(1, self.l + 1):
+            Nb += self.colors ** fractions.gcd(self.l, d)
+        Nb //= self.l
+        
+        return Nb
+    
+    
+    def __iter__(self):
+        """ returns a generator of all unique chains.
+        This uses the FKM algorithm published in
+        H. Fredricksen and I. J. Kessler, An algorithm for generating necklaces
+            of beads in two colors, Discrete Math. 61 (1986), 181-188.
+        H. Fredricksen and J. Maiorana, Necklaces of beads in k colors and
+            k-ary de Bruijn sequences, Discrete Math. 23 (1978), 207-210.
+        """
+        l, k = self.l, self.colors
+        a = np.zeros(l, np.int)
+        yield a
+        
+        i = l - 1
+        while True:
+            a[i] += 1
+            for j in xrange(l - i - 1):
+                a[j + i + 1] = a[j]
+            if l % (i + 1) == 0:
+                yield a
+            i = l - 1
+            while a[i] == k - 1:
+                i -= 1
+                if i < 0:
+                    return
 
 
+    def to_array(self):
+        """ returns a list of all unique chains of length `l` with `colors`
+        possible colors per chain """
+        res = np.zeros((len(self), self.l), np.int)
+        for k, c in enumerate(self):
+            res[k, :] = c
+        return res
+    
+    
+    def choose_unique(self, cnt):
+        """ chooses `cnt` unique chains consisting of `l` chains with
+        `colors` unique colors """
+        l, colors = self.l, self.colors
+        
+        base = colors ** np.arange(l)
+        
+        chains, characters = [], set()
+        counter = 0
+        while len(chains) < cnt:
+            # choose a random substrate and determine its character
+            s = np.random.randint(0, colors, size=l)
+            s2 = np.r_[s, s]
+            character = min(np.dot(s2[k:k + l], base)
+                            for k in xrange(l))
+            counter += 1
+            # add the substrate if it is not already in the list
+            if character not in characters:
+                chains.append(s)
+                characters.add(character)
+                counter = 0
+                
+            # interrupt the search if no substrate can be found
+            if counter > 1000:
+                raise RuntimeError('Cannot find %d chains of length %d' % 
+                                   (cnt, l))
+        return chains
 
-def blocks1D_get_unique(l, colors=2):
-    """ returns a list of all unique blocks of length `l` with `colors`
-    possible colors per block """
-    blocks = np.array(list(itertools.product(range(colors), repeat=l)))
-    return blocks1D_remove_redundant(blocks)
-
-
-
-def block1D_count(l, colors=2):
-    """ returns the number of unique blocks of length l
-    This number is equivalent to len(blocks1D_get_unique(l, colors))
-    However, we use a more efficient mathematical solution based on
-        http://en.wikipedia.org/wiki/Necklace_(combinatorics)
+    
+    
+class ChainsInteraction(object):
+    """ class that represents the interaction between a set of substrates and a
+    set of receptors.
     """
-    Nr = 0
-    for d in xrange(1, l + 1):
-        if l % d == 0:
-            Nr += euler_phi(d) * colors**(l//d)
-    Nr //= l
-    
-    return Nr
-    
-    
-    
-class Blocks1DInteraction(object):
-    """ class that evaluates the interaction energies between a set of
-    substrates and a set of receptors.
-    """
-    temperature = 1 #< temperature for equilibrium binding
-    threshold = 0.2 #< threshold above which the receptor responds
+    temperature = 1  #< temperature for equilibrium binding
+    threshold = 0.2  #< threshold above which the receptor responds
         
     clone_cache_keys = ('energies2',)
     
     def __init__(self, substrates, receptors, colors,
                  cache=None, energies=None):
         
-        self.substrates = np.asarray(substrates)
-        self.receptors = np.asarray(receptors)
+        if isinstance(substrates, Chains):
+            self.substrates = substrates.to_array()
+        else:
+            self.substrates = np.asarray(substrates)
+            
+        if isinstance(receptors, Chains):
+            self.receptors = receptors.to_array()
+        else:
+            self.receptors = np.asarray(receptors)
+            
         self.colors = colors
         
         if cache is None:
@@ -149,14 +192,15 @@ class Blocks1DInteraction(object):
 
     def check_consistency(self):
         """ consistency check on the number of receptors and substrates """
-        unique_substrates = blocks1D_remove_redundant(self.substrates)
+        unique_substrates = chains_remove_redundant(self.substrates)
         redundant_count = len(self.substrates) - len(unique_substrates)
         if redundant_count:
             raise RuntimeWarning('There are %d redundant substrates' % 
                                  redundant_count)
         
         cnt_r, l_r = self.receptors.shape
-        if cnt_r > block1D_count(l_r, self.colors):
+        chains = Chains(l_r, self.colors)
+        if cnt_r > len(chains):
             raise RuntimeWarning('The number of supplied receptors is larger '
                                  'than the number of possible unique ones.')
     
@@ -260,7 +304,7 @@ class Blocks1DInteraction(object):
         # normalize for each substrate across all receptors
         # => scenario in which each substrate binds to exactly one receptor
         probs /= np.sum(probs, axis=1)[:, None]
-        return probs     
+        return probs
     
     
     @property
@@ -310,6 +354,7 @@ class Blocks1DInteraction(object):
     @property
     def output_count(self):
         """ number of different outputs """
+        # the 2 is due to the binary output of the receptors
         return 2 ** len(self.receptors)
     
     @property
@@ -325,42 +370,52 @@ class Blocks1DInteraction(object):
     
 
 
-class Blocks1DCollection(object):
-    """ class that represents all possible combinations of blocks consisting
-    of `cnt` distinct blocks of length `l` """
+class ChainsCollection(object):
+    """ class that represents all possible collections of `cnt` distinct chains
+     of length `l` """
      
     def __init__(self, cnt, l, colors=2):
         self.cnt = cnt
+        self.chains = Chains(l, colors)
+        
+        # currently used to generate random chains
         self.l = l
         self.colors = colors
         
     
     def __len__(self):
         """ returns the number of possible receptor combinations """
-        num = block1D_count(self.l, self.colors)
+        num = len(self.chains)
         return comb(num, self.cnt, exact=True)
                
 
     def __iter__(self):
         """ generates all possible receptor combinations """
-        blocks = blocks1D_get_unique(self.l, self.colors)
-        return itertools.combinations(blocks, self.cnt)
+        chains = self.chains.to_array()
+        for chain_col in itertools.combinations(chains, self.cnt):
+            yield np.array(chain_col) 
 
 
-    def get_random_blocks(self):
-        """ returns a random set of blocks """
-        # TODO: ensure that the blocks are unique
-        # TODO: ensure that the blocks would also appear in the iteration
+    def get_zero_chains(self):
+        """ returns a list with chains of color 0 """
+        return np.zeros((self.cnt, self.l), np.int)
+
+
+    def get_random_chains(self):
+        """ returns a random set of chains """
+        # TODO: ensure that the chains are unique
+        # TODO: ensure that the chains would also appear in the iteration
         return np.random.randint(0, self.colors, size=(self.cnt, self.l))
 
 
 
-class Blocks1DInteractionCollection(object):
-    """ collection that contains all possible combinations of substrate
+class ChainsInteractionCollection(object):
+    """ class that represents all possible combinations of substrate and
     receptor interactions """
+    
     def __init__(self, substrates, cnt_r, l_r, colors):      
         self.substrates = substrates
-        self.receptors_collection = Blocks1DCollection(cnt_r, l_r, colors)
+        self.receptors_collection = ChainsCollection(cnt_r, l_r, colors)
         self.colors = colors
         
         
@@ -369,18 +424,26 @@ class Blocks1DInteractionCollection(object):
     
     
     def __iter__(self):
-        """ generates all possible block interactions """
+        """ generates all possible chain interactions """
         #TODO: try to increase the performance by
         #    * improving update_energies
         #    * taking advantage of partially calculated energies
+        
+        # create an initial state object
+        receptors = self.receptors_collection.get_zero_chains()
+        state = ChainsInteraction(self.substrates, receptors, self.colors)
+        
+        # iterate over all receptors and update the state object
         for receptors in self.receptors_collection:
-            yield Blocks1DInteraction(self.substrates, receptors, self.colors)
+            state.receptors = receptors
+            state.update_energies()
+            yield state
         
     
     def get_random_state(self):
-        """ returns a randomly chosen block interaction """
-        receptors = self.receptors_collection.get_random_blocks()
-        return Blocks1DInteraction(self.substrates, receptors, self.colors)
+        """ returns a randomly chosen chain interaction """
+        receptors = self.receptors_collection.get_random_chains()
+        return ChainsInteraction(self.substrates, receptors, self.colors)
     
     
     def estimate_computation_speed(self):

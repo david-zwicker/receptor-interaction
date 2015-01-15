@@ -81,7 +81,7 @@ class ReceptorOptimizerAnnealing(Annealer):
 
 def ReceptorOptimizerAuto(state_collection, time_limit=1, verbose=True,
                           parameter_estimation=False):
-    """ class that chooses the the right optimizer with the right parameters
+    """ factory that chooses the the right optimizer with the right parameters
     based on the number of receptors that have to be tested and the time limit
     that is supplied. The `time_limit` should be given in seconds.
     """
@@ -113,7 +113,5 @@ def ReceptorOptimizerAuto(state_collection, time_limit=1, verbose=True,
         
     return optimizer
 
-
-
-    
+   
     
