@@ -337,7 +337,7 @@ class Blocks1DCollection(object):
     def __len__(self):
         """ returns the number of possible receptor combinations """
         num = block1D_count(self.l, self.colors)
-        return comb(num, self.cnt, exact=True, repetition=False)
+        return comb(num, self.cnt, exact=True)
                
 
     def __iter__(self):
