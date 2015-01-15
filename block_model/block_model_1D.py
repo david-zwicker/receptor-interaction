@@ -7,9 +7,10 @@ Created on Jan 12, 2015
 from __future__ import division
 
 import fractions
+import itertools
 import random
 import math
-import itertools
+import timeit
 
 from scipy.misc import comb
 
@@ -380,6 +381,21 @@ class Blocks1DInteractionCollection(object):
         """ returns a randomly chosen block interaction """
         receptors = self.receptors_collection.get_random_blocks()
         return Blocks1DInteraction(self.substrates, receptors, self.colors)
+    
+    
+    def estimate_computation_speed(self):
+        """ estimate the speed of the computation of a single iteration """
+        
+        # test function
+        func = lambda: self.get_random_state().get_mutual_information()
+        
+        # try different repetitions until the total run time is about 1 sec 
+        number, duration = 1, 0
+        while duration < 0.1:
+            number *= 10
+            duration = timeit.timeit(func, number=number)
+            
+        return duration/number
     
     
 #===============================================================================
