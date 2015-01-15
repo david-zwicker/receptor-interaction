@@ -128,17 +128,13 @@ class Blocks1DInteraction(object):
         
     clone_cache_keys = ('energies2',)
     
-    def __init__(self, substrates, receptors, colors=None, cache=None,
-                 energies=None):
+    def __init__(self, substrates, receptors, colors,
+                 cache=None, energies=None):
         
         self.substrates = np.asarray(substrates)
         self.receptors = np.asarray(receptors)
+        self.colors = colors
         
-        if colors is None:
-            self.colors = max(substrates.max(), receptors.max()) + 1
-        else:
-            self.colors = colors
-            
         if cache is None:
             self._cache = {}
         else:
@@ -240,7 +236,8 @@ class Blocks1DInteraction(object):
         else:
             # more than two colors => use random choice
             clrs = self.color_alternatives[self.receptors[x, y]]
-            self.receptors[x, y] = np.random.choice(clrs)
+            idx = random.randint(0, self.colors - 2)
+            self.receptors[x, y] = clrs[idx]
 
         # recalculate the interaction energies of the changed receptor        
         _update_energies(self.substrates2, self.receptors[x],
@@ -317,17 +314,11 @@ class Blocks1DInteraction(object):
     @property
     def mutual_information_max(self):
         """ return upper bound for mutual information """
-        # maximal mutual information restricted by receptors
-        # there is a vector space of possible receptors, spanned
-        # by the dim=min(cnt_r, l_r) basis vectors
-        # => the possible number of receptors is colors^dim
-        cnt_r, l_r = self.receptors.shape
-        MI_receptors = min(cnt_r, l_r) * np.log(2)
-        # Here, the 2 is due to the binary receptor output
+        # maximal mutual information restricted by the output
+        MI_receptors = np.log(self.output_count)
         
         # maximal mutual information restricted by substrates
-        cnt_s = self.substrates.shape[0]
-        MI_substrates = np.log(cnt_s)
+        MI_substrates = np.log(self.substrate_count)
         
         return min(MI_receptors, MI_substrates)
     
@@ -353,18 +344,42 @@ class Blocks1DCollection(object):
         """ generates all possible receptor combinations """
         blocks = blocks1D_get_unique(self.l, self.colors)
         return itertools.combinations(blocks, self.cnt)
-        
-        
 
-def blocks1D_generate_interactions(substrates, cnt_r, l_r, colors):
-    """ generates all possible combinations of substrate receptor interactions
-    """
-    #TODO: try to increase the performance by
-    #    * improving update_energies
-    #    * taking advantage of partially calculated energies
-    receptor_collection = Blocks1DCollection(cnt_r, l_r, colors)
-    for receptors in receptor_collection:
-        yield Blocks1DInteraction(substrates, receptors, colors)
+
+    def get_random_blocks(self):
+        """ returns a random set of blocks """
+        # TODO: ensure that the blocks are unique
+        # TODO: ensure that the blocks would also appear in the iteration
+        return np.random.randint(0, self.colors, size=(self.cnt, self.l))
+
+
+
+class Blocks1DInteractionCollection(object):
+    """ collection that contains all possible combinations of substrate
+    receptor interactions """
+    def __init__(self, substrates, cnt_r, l_r, colors):      
+        self.substrates = substrates
+        self.receptors_collection = Blocks1DCollection(cnt_r, l_r, colors)
+        self.colors = colors
+        
+        
+    def __len__(self):
+        return len(self.receptors_collection)
+    
+    
+    def __iter__(self):
+        """ generates all possible block interactions """
+        #TODO: try to increase the performance by
+        #    * improving update_energies
+        #    * taking advantage of partially calculated energies
+        for receptors in self.receptors_collection:
+            yield Blocks1DInteraction(self.substrates, receptors, self.colors)
+        
+    
+    def get_random_state(self):
+        """ returns a randomly chosen block interaction """
+        receptors = self.receptors_collection.get_random_blocks()
+        return Blocks1DInteraction(self.substrates, receptors, self.colors)
     
     
 #===============================================================================
