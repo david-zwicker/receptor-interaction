@@ -48,7 +48,6 @@ try:
 except ImportError:
     numba = None
     print('Numba was not found. Slow functions will be used')
-numba = None
 
 
 def chains_remove_redundant(chains):
@@ -78,7 +77,7 @@ class Chains(object):
         
     def __repr__(self):
         return ('%s(l=%d, colors=%d)' %
-                (self.__name__, self.l, self.colors))
+                (self.__class__.__name__, self.l, self.colors))
         
         
     def __len__(self):
@@ -166,8 +165,7 @@ class ChainsInteraction(object):
     """
     temperature = 1  #< temperature for equilibrium binding
     threshold = 1    #< threshold above which the receptor responds
-        
-    clone_cache_keys = ('energies2',)
+
     
     def __init__(self, substrates, receptors, colors,
                  cache=None, energies=None):
@@ -211,8 +209,8 @@ class ChainsInteraction(object):
         
     def copy(self):
         """ copies the current interaction state to allow the receptors to
-        be mutated. The substrates will be shared between this object and its
-        copy """
+        be mutated. The substrates and the cache will be shared between this
+        object and its copy """
         return self.__class__(self.substrates, self.receptors.copy(),
                               self.colors, self._cache, self.energies.copy())
         
@@ -312,7 +310,7 @@ class ChainsInteraction(object):
             return self._cache['binary_base']
         except KeyError:
             cnt_r = len(self.receptors)
-            self._cache['binary_base'] = self.colors**np.arange(cnt_r)
+            self._cache['binary_base'] = 2 ** np.arange(cnt_r)
             return self._cache['binary_base']
         
         
@@ -381,8 +379,8 @@ class ChainsCollection(object):
         
         
     def __repr__(self):
-        print ('%s(cnt=%d, l=%d, colors=%d)' %
-               (self.__name__, self.cnt, self.l, self.colors))
+        return ('%s(cnt=%d, l=%d, colors=%d)' %
+                (self.__class__.__name__, self.cnt, self.l, self.colors))
         
     
     def __len__(self):
@@ -393,7 +391,7 @@ class ChainsCollection(object):
 
     def __iter__(self):
         """ generates all possible receptor combinations """
-        chains = self.chains
+        chains = self.chains.to_array()
         for chain_col in itertools.combinations(chains, self.cnt):
             yield np.array(chain_col) 
 
@@ -425,9 +423,9 @@ class ChainsInteractionCollection(object):
 
 
     def __repr__(self):
-        print ('%s(%s, cnt=%d, l=%d, colors=%d)' %
-               (self.__name__, repr(self.substrates), self.cnt, self.l,
-                self.colors))
+        return ('%s(%s, cnt=%d, l=%d, colors=%d)' %
+                (self.__class__.__name__, repr(self.substrates), self.cnt,
+                 self.l, self.colors))
         
         
     def __len__(self):
