@@ -50,7 +50,12 @@ except ImportError:
     print('Numba was not found. Slow functions will be used')
 
 
-def chains_remove_redundant(chains):
+#===============================================================================
+# BASIC CHAIN/NECKLACE FUNCTIONS
+#===============================================================================
+
+
+def remove_redundant_chains(chains):
     """ removes chains that are the same (because of periodic boundary
     conditions) """
     l_s = len(chains[0])
@@ -82,9 +87,9 @@ class Chains(object):
         
     def __len__(self):
         """ returns the number of unique chains of length l
-        This number is equivalent to len(chains_get_unique(l, colors))
-        However, we use a more efficient mathematical solution based on Eq. 1 in
-            F. Ruskey, C. Savage, T. Min Yih Wang, J. of Algorithms 13 (1992)
+        This number is equivalent to len(list(self)), but uses a more efficient
+        mathematical solution based on Eq. 1 in the paper
+            F. Ruskey, C. Savage, T. Min Yih Wang, J. of Algorithms, 13 (1992).
         """
         Nb = 0
         for d in xrange(1, self.l + 1):
@@ -95,12 +100,19 @@ class Chains(object):
     
     
     def __iter__(self):
-        """ returns a generator of all unique chains.
-        This uses the FKM algorithm published in
-        H. Fredricksen and I. J. Kessler, An algorithm for generating necklaces
-            of beads in two colors, Discrete Math. 61 (1986), 181-188.
-        H. Fredricksen and J. Maiorana, Necklaces of beads in k colors and
+        """ returns a generator for all unique chains.
+
+        Note that the return value is a view into an internal array. Use
+            [v.copy() for v in self]
+        instead of
+            list(self)
+        to create a list of all chains.  
+
+        This method uses the FKM algorithm published in
+        * H. Fredricksen and J. Maiorana, Necklaces of beads in k colors and
             k-ary de Bruijn sequences, Discrete Math. 23 (1978), 207-210.
+        * H. Fredricksen and I. J. Kessler, An algorithm for generating 
+            necklaces of beads in two colors, Discrete Math. 61 (1986), 181-188.
         """
         l, k = self.l, self.colors
         a = np.zeros(l, np.int)
@@ -120,8 +132,14 @@ class Chains(object):
                     return
 
 
+    def to_list(self):
+        """ returns an array of all unique chains of length `l` with `colors`
+        possible colors per chain """
+        return [v.copy() for v in self]
+    
+    
     def to_array(self):
-        """ returns a list of all unique chains of length `l` with `colors`
+        """ returns an array of all unique chains of length `l` with `colors`
         possible colors per chain """
         res = np.zeros((len(self), self.l), np.int)
         for k, c in enumerate(self):
@@ -157,7 +175,56 @@ class Chains(object):
                                    (cnt, l))
         return chains
 
+
+
+
+class ChainsCollection(object):
+    """ class that represents all possible collections of `cnt` distinct chains
+     of length `l` """
+     
+    def __init__(self, cnt, l, colors=2):
+        self.cnt = cnt
+        self.chains = Chains(l, colors)
+        
+        # currently used to generate random chains
+        self.l = l
+        self.colors = colors
+        
+        
+    def __repr__(self):
+        return ('%s(cnt=%d, l=%d, colors=%d)' %
+                (self.__class__.__name__, self.cnt, self.l, self.colors))
+        
     
+    def __len__(self):
+        """ returns the number of possible receptor combinations """
+        num = len(self.chains)
+        return comb(num, self.cnt, exact=True)
+               
+
+    def __iter__(self):
+        """ generates all possible receptor combinations """
+        chains = self.chains.to_array()
+        for chain_col in itertools.combinations(chains, self.cnt):
+            yield np.array(chain_col) 
+
+
+    def get_zero_chains(self):
+        """ returns a list with chains of color 0 """
+        return np.zeros((self.cnt, self.l), np.int)
+
+
+    def get_random_chains(self):
+        """ returns a random set of chains """
+        # TODO: ensure that the chains are unique
+        # TODO: ensure that the chains would also appear in the iteration
+        return np.random.randint(0, self.colors, size=(self.cnt, self.l))
+    
+    
+#===============================================================================
+# FUNCTIONS FOR CHAIN/NECKLACE INTERACTIONS
+#===============================================================================
+
     
 class ChainsInteraction(object):
     """ class that represents the interaction between a set of substrates and a
@@ -194,17 +261,25 @@ class ChainsInteraction(object):
 
     def check_consistency(self):
         """ consistency check on the number of receptors and substrates """
-        unique_substrates = chains_remove_redundant(self.substrates)
+        # check the supplied substrates
+        unique_substrates = remove_redundant_chains(self.substrates)
         redundant_count = len(self.substrates) - len(unique_substrates)
         if redundant_count:
             raise RuntimeWarning('There are %d redundant substrates' % 
                                  redundant_count)
         
+        # check the supplied receptors
         cnt_r, l_r = self.receptors.shape
         chains = Chains(l_r, self.colors)
         if cnt_r > len(chains):
             raise RuntimeWarning('The number of supplied receptors is larger '
                                  'than the number of possible unique ones.')
+    
+        unique_receptors = remove_redundant_chains(self.receptors)
+        redundant_count = len(self.receptors) - len(unique_receptors)
+        if redundant_count:
+            raise RuntimeWarning('There are %d redundant receptors' % 
+                                 redundant_count)
     
         
     def copy(self):
@@ -362,50 +437,6 @@ class ChainsInteraction(object):
         MI_substrates = np.log(self.substrate_count)
         
         return min(MI_receptors, MI_substrates)
-    
-
-
-class ChainsCollection(object):
-    """ class that represents all possible collections of `cnt` distinct chains
-     of length `l` """
-     
-    def __init__(self, cnt, l, colors=2):
-        self.cnt = cnt
-        self.chains = Chains(l, colors)
-        
-        # currently used to generate random chains
-        self.l = l
-        self.colors = colors
-        
-        
-    def __repr__(self):
-        return ('%s(cnt=%d, l=%d, colors=%d)' %
-                (self.__class__.__name__, self.cnt, self.l, self.colors))
-        
-    
-    def __len__(self):
-        """ returns the number of possible receptor combinations """
-        num = len(self.chains)
-        return comb(num, self.cnt, exact=True)
-               
-
-    def __iter__(self):
-        """ generates all possible receptor combinations """
-        chains = self.chains.to_array()
-        for chain_col in itertools.combinations(chains, self.cnt):
-            yield np.array(chain_col) 
-
-
-    def get_zero_chains(self):
-        """ returns a list with chains of color 0 """
-        return np.zeros((self.cnt, self.l), np.int)
-
-
-    def get_random_chains(self):
-        """ returns a random set of chains """
-        # TODO: ensure that the chains are unique
-        # TODO: ensure that the chains would also appear in the iteration
-        return np.random.randint(0, self.colors, size=(self.cnt, self.l))
 
 
 
@@ -471,7 +502,7 @@ class ChainsInteractionCollection(object):
     
     
 #===============================================================================
-# DEFINE FAST FUNCTIONS USING NUMBA
+# FAST FUNCTIONS USING NUMBA
 #===============================================================================
 
 
