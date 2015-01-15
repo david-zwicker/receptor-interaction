@@ -10,10 +10,11 @@ from __future__ import division
 from simanneal import Annealer
 
 
+
 class ReceptorOptimizerExhaustive(object):
     """ class for finding optimal receptor distribution using and exhaustive
     search """
-    
+
     def __init__(self, possible_states):
         """ `possible_states` should return a list or a generator with all
         possible states, which can be used to iterate over """

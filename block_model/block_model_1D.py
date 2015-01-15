@@ -6,6 +6,7 @@ Created on Jan 12, 2015
 
 from __future__ import division
 
+import fractions
 import random
 import math
 import itertools
@@ -33,82 +34,23 @@ except ImportError:
     print('Numba was not found. Slow functions will be used')
 
 
-if numba:
-    # define fast numerical functions using numba
-    
-    @numba.jit('void(i8[:, :], i8[:], i8[:])')
-    def _update_energies(substrates2, receptor, out):
-        """ update interaction energies of the `receptor` with the substrates
-        and save them in `out` """ 
-        cnt_s, l_s2 = substrates2.shape
-        l_r, l_s = len(receptor), l_s2 // 2
-        for s in xrange(cnt_s):
-            overlap_max = -1
-            for i in xrange(l_s):
-                overlap = 0
-                for k in xrange(l_r):
-                    if substrates2[s, i + k] == receptor[k]:
-                        overlap += 1
-                overlap_max = max(overlap_max, overlap)
-            out[s] = overlap_max
 
+def euler_phi(n):
+    """ evaluates the Euler phi function for argument `n`
+    See http://en.wikipedia.org/wiki/Euler%27s_totient_function
+    Implementation based on http://stackoverflow.com/a/18114286/932593
+    """
+    amount = 0
 
-    @numba.jit('void(i8[:, :], i8[:, :], f8[:, :])', nopython=True)
-    def _get_energies(substrates2, receptors, out):
-        """ calculates all the interaction energies between the substrates and
-        the receptors and stores them in `out` """
-        cnt_s, l_s2 = substrates2.shape
-        l_s = l_s2 // 2
-        cnt_r, l_r = receptors.shape
-        # check all substrates versus all receptors
-        for x in xrange(cnt_s):
-            for y in xrange(cnt_r):
-                overlap_max = 0
-                # find the maximum over all starting positions
-                for start in xrange(l_s):
-                    overlap = 0
-                    # count overlap along receptor length
-                    for k in xrange(l_r):
-                        if substrates2[x, start + k] == receptors[y, k]:
-                            overlap += 1
-                    overlap_max = max(overlap_max, overlap)
-                out[x, y] = overlap_max
+    for k in xrange(1, n + 1):
+        if fractions.gcd(n, k) == 1:
+            amount += 1
 
-
-else:
-    # define the slow substitute functions working without numba
-    
-    def _update_energies(substrates2, receptor, out):
-        """ update interaction energies of the `receptor` with the substrates
-        and save them in `out` """ 
-        l_s, l_r = substrates2.shape[1] // 2, len(receptor)
-        out[:] = np.max([
-            np.sum(substrates2[:, i:i+l_r] == receptor[np.newaxis, :],
-                   axis=1)
-            for i in xrange(l_s)
-        ], axis=0)
-        
-        
-    def _get_energies(substrates2, receptors, out):
-        """ calculates all the interaction energies between the substrates and
-        the receptors and stores them in `out` """
-        # get dimensions
-        l_s = substrates2.shape[1] // 2
-        l_r = receptors.shape[1]
-
-        # calculate the energies with a sliding window
-        Es = np.array([
-            np.sum(substrates2[:, np.newaxis, i:i+l_r] ==
-                       receptors[np.newaxis, :, :],
-                   axis=2)
-            for i in xrange(l_s)
-        ])
-
-        out[:] = Es.max(axis=0)
+    return amount
 
 
 
-def remove_redundant_blocks(blocks):
+def blocks1D_remove_redundant(blocks):
     """ removes blocks that are the same (because of periodic boundary
     conditions) """
     l_s = len(blocks[0])
@@ -125,10 +67,10 @@ def remove_redundant_blocks(blocks):
 
 
 
-def choose_unique_blocks(colors, l, cnt):
+def blocks1D_choose_unique(cnt, l, colors=2):
     """ chooses `cnt` unique substrates consisting of `l` blocks with
     `colors` unique colors """
-    base = colors**np.arange(l)
+    base = colors ** np.arange(l)
     
     substrates, characters = [], set()
     counter = 0
@@ -153,42 +95,31 @@ def choose_unique_blocks(colors, l, cnt):
 
 
 
-def get_unique_blocks(colors, l):
+def blocks1D_get_unique(l, colors=2):
     """ returns a list of all unique blocks of length `l` with `colors`
     possible colors per block """
     blocks = np.array(list(itertools.product(range(colors), repeat=l)))
-    return remove_redundant_blocks(blocks)
+    return blocks1D_remove_redundant(blocks)
 
 
 
-def generate_receptors(colors, l_r, cnt_r):
-    """ generates all possible receptor combinations """ 
-    receptors = get_unique_blocks(colors, l_r)
-    return itertools.combinations(receptors, cnt_r)
-    
-    
-    
-def receptor_combination_count(colors, l_r, cnt_r):
-    """ returns the number of possible receptor combinations """
-    #TODO: there should be a more efficient way to determine the number of
-    #      possible receptors 
-    Nr = len(get_unique_blocks(colors, l_r))
-    return comb(Nr, cnt_r, exact=True, repetition=False)
-               
-
-
-def generate_substrate_receptor_interactions(substrates, colors, l_r, cnt_r):
-    """ generates all possible combinations of substrate receptor interactions
+def block1D_count(l, colors=2):
+    """ returns the number of unique blocks of length l
+    This number is equivalent to len(blocks1D_get_unique(l, colors))
+    However, we use a more efficient mathematical solution based on
+        http://en.wikipedia.org/wiki/Necklace_(combinatorics)
     """
-    #TODO: try to increase the performance by
-    #    * improving update_energies
-    #    * taking advantage of partially calculated energies
-    for receptors in generate_receptors(colors, l_r, cnt_r):
-        yield SubstrateReceptorInteraction1D(substrates, receptors, colors)
+    Nr = 0
+    for d in xrange(1, l + 1):
+        if l % d == 0:
+            Nr += euler_phi(d) * colors**(l//d)
+    Nr //= l
+    
+    return Nr
     
     
-
-class SubstrateReceptorInteraction1D(object):
+    
+class Blocks1DInteraction(object):
     """ class that evaluates the interaction energies between a set of
     substrates and a set of receptors.
     """
@@ -200,25 +131,38 @@ class SubstrateReceptorInteraction1D(object):
     def __init__(self, substrates, receptors, colors=None, cache=None,
                  energies=None):
         
-        # TODO: Check that we do not search for more receptors than there
-        # are actually possible variations
-        # compare len(receptors) to len(get_unique_blocks(colors, l_r))
-    
         self.substrates = np.asarray(substrates)
         self.receptors = np.asarray(receptors)
+        
         if colors is None:
             self.colors = max(substrates.max(), receptors.max()) + 1
         else:
             self.colors = colors
+            
         if cache is None:
             self._cache = {}
         else:
             self._cache = cache
+            
         if energies is None:
             self.energies = self.get_energies()
         else:
             self.energies = energies
+
+
+    def check_consistency(self):
+        """ consistency check on the number of receptors and substrates """
+        unique_substrates = blocks1D_remove_redundant(self.substrates)
+        redundant_count = len(self.substrates) - len(unique_substrates)
+        if redundant_count:
+            raise RuntimeWarning('There are %d redundant substrates' % 
+                                 redundant_count)
         
+        cnt_r, l_r = self.receptors.shape
+        if cnt_r > block1D_count(l_r, self.colors):
+            raise RuntimeWarning('The number of supplied receptors is larger '
+                                 'than the number of possible unique ones.')
+    
         
     def __repr__(self):
         cnt_s, l_s = self.substrates.shape
@@ -387,5 +331,118 @@ class SubstrateReceptorInteraction1D(object):
         
         return min(MI_receptors, MI_substrates)
     
+
+
+class Blocks1DCollection(object):
+    """ class that represents all possible combinations of blocks consisting
+    of `cnt` distinct blocks of length `l` """
+     
+    def __init__(self, cnt, l, colors=2):
+        self.cnt = cnt
+        self.l = l
+        self.colors = colors
+        
+    
+    def __len__(self):
+        """ returns the number of possible receptor combinations """
+        num = block1D_count(self.l, self.colors)
+        return comb(num, self.cnt, exact=True, repetition=False)
+               
+
+    def __iter__(self):
+        """ generates all possible receptor combinations """
+        blocks = blocks1D_get_unique(self.l, self.colors)
+        return itertools.combinations(blocks, self.cnt)
+        
+        
+
+def blocks1D_generate_interactions(substrates, cnt_r, l_r, colors):
+    """ generates all possible combinations of substrate receptor interactions
+    """
+    #TODO: try to increase the performance by
+    #    * improving update_energies
+    #    * taking advantage of partially calculated energies
+    receptor_collection = Blocks1DCollection(cnt_r, l_r, colors)
+    for receptors in receptor_collection:
+        yield Blocks1DInteraction(substrates, receptors, colors)
+    
+    
+#===============================================================================
+# DEFINE FAST FUNCTIONS USING NUMBA
+#===============================================================================
+
+
+if numba:
+    # define fast numerical functions using numba
+    
+    @numba.jit('void(i8[:, :], i8[:], f8[:])', nopython=True)
+    def _update_energies(substrates2, receptor, out):
+        """ update interaction energies of the `receptor` with the substrates
+        and save them in `out` """ 
+        cnt_s, l_s2 = substrates2.shape
+        l_r, l_s = len(receptor), l_s2 // 2
+        for s in xrange(cnt_s):
+            overlap_max = -1
+            for i in xrange(l_s):
+                overlap = 0
+                for k in xrange(l_r):
+                    if substrates2[s, i + k] == receptor[k]:
+                        overlap += 1
+                overlap_max = max(overlap_max, overlap)
+            out[s] = overlap_max
+
+
+    @numba.jit('void(i8[:, :], i8[:, :], f8[:, :])', nopython=True)
+    def _get_energies(substrates2, receptors, out):
+        """ calculates all the interaction energies between the substrates and
+        the receptors and stores them in `out` """
+        cnt_s, l_s2 = substrates2.shape
+        l_s = l_s2 // 2
+        cnt_r, l_r = receptors.shape
+        # check all substrates versus all receptors
+        for x in xrange(cnt_s):
+            for y in xrange(cnt_r):
+                overlap_max = 0
+                # find the maximum over all starting positions
+                for start in xrange(l_s):
+                    overlap = 0
+                    # count overlap along receptor length
+                    for k in xrange(l_r):
+                        if substrates2[x, start + k] == receptors[y, k]:
+                            overlap += 1
+                    overlap_max = max(overlap_max, overlap)
+                out[x, y] = overlap_max
+
+
+else:
+    # define the slow substitute functions working without numba
+    
+    def _update_energies(substrates2, receptor, out):
+        """ update interaction energies of the `receptor` with the substrates
+        and save them in `out` """ 
+        l_s, l_r = substrates2.shape[1] // 2, len(receptor)
+        out[:] = np.max([
+            np.sum(substrates2[:, i:i+l_r] == receptor[np.newaxis, :],
+                   axis=1)
+            for i in xrange(l_s)
+        ], axis=0)
+        
+        
+    def _get_energies(substrates2, receptors, out):
+        """ calculates all the interaction energies between the substrates and
+        the receptors and stores them in `out` """
+        # get dimensions
+        l_s = substrates2.shape[1] // 2
+        l_r = receptors.shape[1]
+
+        # calculate the energies with a sliding window
+        Es = np.array([
+            np.sum(substrates2[:, np.newaxis, i:i+l_r] ==
+                       receptors[np.newaxis, :, :],
+                   axis=2)
+            for i in xrange(l_s)
+        ])
+
+        out[:] = Es.max(axis=0)
 
 
