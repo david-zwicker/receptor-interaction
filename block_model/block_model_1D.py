@@ -48,7 +48,7 @@ try:
 except ImportError:
     numba = None
     print('Numba was not found. Slow functions will be used')
-
+numba = None
 
 
 def chains_remove_redundant(chains):
@@ -74,6 +74,11 @@ class Chains(object):
     def __init__(self, l, colors=2):
         self.l = l
         self.colors = colors
+        
+        
+    def __repr__(self):
+        return ('%s(l=%d, colors=%d)' %
+                (self.__name__, self.l, self.colors))
         
         
     def __len__(self):
@@ -160,23 +165,15 @@ class ChainsInteraction(object):
     set of receptors.
     """
     temperature = 1  #< temperature for equilibrium binding
-    threshold = 0.2  #< threshold above which the receptor responds
+    threshold = 1    #< threshold above which the receptor responds
         
     clone_cache_keys = ('energies2',)
     
     def __init__(self, substrates, receptors, colors,
                  cache=None, energies=None):
         
-        if isinstance(substrates, Chains):
-            self.substrates = substrates.to_array()
-        else:
-            self.substrates = np.asarray(substrates)
-            
-        if isinstance(receptors, Chains):
-            self.receptors = receptors.to_array()
-        else:
-            self.receptors = np.asarray(receptors)
-            
+        self.substrates = np.asarray(substrates)
+        self.receptors = np.asarray(receptors)
         self.colors = colors
         
         if cache is None:
@@ -189,6 +186,13 @@ class ChainsInteraction(object):
         else:
             self.energies = energies
 
+        
+    def __repr__(self):
+        cnt_s, l_s = self.substrates.shape
+        cnt_r, l_r = self.receptors.shape
+        return ('%s(%d substrates of l=%d, %d receptors of l=%d)' %
+                (self.__class__.__name__, cnt_s, l_s, cnt_r, l_r))
+        
 
     def check_consistency(self):
         """ consistency check on the number of receptors and substrates """
@@ -204,13 +208,6 @@ class ChainsInteraction(object):
             raise RuntimeWarning('The number of supplied receptors is larger '
                                  'than the number of possible unique ones.')
     
-        
-    def __repr__(self):
-        cnt_s, l_s = self.substrates.shape
-        cnt_r, l_r = self.receptors.shape
-        return ('%s(%d substrates of l=%d, %d receptors of l=%d)' %
-                (self.__class__.__name__, cnt_s, l_s, cnt_r, l_r))
-        
         
     def copy(self):
         """ copies the current interaction state to allow the receptors to
@@ -308,15 +305,15 @@ class ChainsInteraction(object):
     
     
     @property
-    def color_base(self):
+    def binary_base(self):
         """ return repeated substrates to implement periodic boundary
         conditions """
         try:
-            return self._cache['color_base']
+            return self._cache['binary_base']
         except KeyError:
             cnt_r = len(self.receptors)
-            self._cache['color_base'] = self.colors**np.arange(cnt_r)
-            return self._cache['color_base']
+            self._cache['binary_base'] = self.colors**np.arange(cnt_r)
+            return self._cache['binary_base']
         
         
     def get_output_vector(self):
@@ -324,9 +321,9 @@ class ChainsInteraction(object):
         # calculate the resulting binding characteristics
         probs = self.get_binding_probabilities()
         # threshold to get the response
-        output = (probs > self.threshold)
+        output = (probs > self.threshold/self.receptor_count)
         # encode output in single integer
-        return np.dot(output, self.color_base) 
+        return np.dot(output, self.binary_base) 
         
     
     def get_mutual_information(self):
@@ -382,6 +379,11 @@ class ChainsCollection(object):
         self.l = l
         self.colors = colors
         
+        
+    def __repr__(self):
+        print ('%s(cnt=%d, l=%d, colors=%d)' %
+               (self.__name__, self.cnt, self.l, self.colors))
+        
     
     def __len__(self):
         """ returns the number of possible receptor combinations """
@@ -391,7 +393,7 @@ class ChainsCollection(object):
 
     def __iter__(self):
         """ generates all possible receptor combinations """
-        chains = self.chains.to_array()
+        chains = self.chains
         for chain_col in itertools.combinations(chains, self.cnt):
             yield np.array(chain_col) 
 
@@ -414,9 +416,18 @@ class ChainsInteractionCollection(object):
     receptor interactions """
     
     def __init__(self, substrates, cnt_r, l_r, colors):      
-        self.substrates = substrates
+        try:
+            self.substrates = substrates.to_array()
+        except AttributeError:
+            self.substrates = np.asarray(substrates)
         self.receptors_collection = ChainsCollection(cnt_r, l_r, colors)
         self.colors = colors
+
+
+    def __repr__(self):
+        print ('%s(%s, cnt=%d, l=%d, colors=%d)' %
+               (self.__name__, repr(self.substrates), self.cnt, self.l,
+                self.colors))
         
         
     def __len__(self):
@@ -515,28 +526,26 @@ else:
         """ update interaction energies of the `receptor` with the substrates
         and save them in `out` """ 
         l_s, l_r = substrates2.shape[1] // 2, len(receptor)
-        out[:] = np.max([
+        out[:] = reduce(np.maximum, (
             np.sum(substrates2[:, i:i+l_r] == receptor[np.newaxis, :],
                    axis=1)
             for i in xrange(l_s)
-        ], axis=0)
-        
-        
+        ))
+            
+            
     def _get_energies(substrates2, receptors, out):
         """ calculates all the interaction energies between the substrates and
         the receptors and stores them in `out` """
         # get dimensions
         l_s = substrates2.shape[1] // 2
         l_r = receptors.shape[1]
-
+    
         # calculate the energies with a sliding window
-        Es = np.array([
+        out[:] = reduce(np.maximum, (
             np.sum(substrates2[:, np.newaxis, i:i+l_r] ==
                        receptors[np.newaxis, :, :],
                    axis=2)
             for i in xrange(l_s)
-        ])
-
-        out[:] = Es.max(axis=0)
+        ))
 
 
