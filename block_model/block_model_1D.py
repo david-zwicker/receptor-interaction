@@ -329,8 +329,7 @@ class ChainsInteraction(object):
     
     @property
     def color_alternatives(self):
-        """ return repeated substrates to implement periodic boundary
-        conditions """
+        """ look-up table for changing the color of a single block """
         if 'color_alternatives' not in self._cache:
             colors = [np.r_[0:c, c+1:self.colors]
                       for c in xrange(self.colors)] 
@@ -369,11 +368,20 @@ class ChainsInteraction(object):
         receptor and calculate the coverage ratio of the receptors given many
         realizations.
         """
-        # calculate interaction probabilities
-        probs = np.exp(self.energies/self.temperature)
+        if self.temperature == 0:
+            # determine minimal energies for each substrate
+            Emin = self.energies.min(axis=1)
+            # determine the receptors that are activated
+            probs = (self.energies == Emin[:, np.newaxis]).astype(np.double)
+            
+        else:
+            # calculate interaction probabilities
+            probs = np.exp(self.energies/self.temperature)
+            
         # normalize for each substrate across all receptors
         # => scenario in which each substrate binds to exactly one receptor
         probs /= np.sum(probs, axis=1)[:, None]
+        
         return probs
     
     
@@ -455,8 +463,8 @@ class ChainsInteractionCollection(object):
 
     def __repr__(self):
         return ('%s(%s, cnt=%d, l=%d, colors=%d)' %
-                (self.__class__.__name__, repr(self.substrates), self.cnt,
-                 self.l, self.colors))
+                (self.__class__.__name__, repr(self.substrates), self.cnt_r,
+                 self.l_r, self.colors))
         
         
     def __len__(self):
@@ -507,9 +515,10 @@ class ChainsInteractionCollection(object):
 
 
 if numba:
+    # TODO: monkey patch these functions into the class
     # define fast numerical functions using numba
     
-    @numba.jit('void(i8[:, :], i8[:], f8[:])', nopython=True)
+    @numba.jit(nopython=True)
     def _update_energies(substrates2, receptor, out):
         """ update interaction energies of the `receptor` with the substrates
         and save them in `out` """ 
@@ -526,7 +535,7 @@ if numba:
             out[s] = overlap_max
 
 
-    @numba.jit('void(i8[:, :], i8[:, :], f8[:, :])', nopython=True)
+    @numba.jit(nopython=True)
     def _get_energies(substrates2, receptors, out):
         """ calculates all the interaction energies between the substrates and
         the receptors and stores them in `out` """
