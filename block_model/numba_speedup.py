@@ -2,6 +2,9 @@
 Created on Jan 16, 2015
 
 @author: David Zwicker <dzwicker@seas.harvard.edu>
+
+Module that monkey patches classes in other models with equivalent, but faster
+methods.
 '''
 
 from __future__ import division
@@ -9,7 +12,9 @@ from __future__ import division
 import model_block_1D
 import model_tetris_1D
 
+import copy
 import numba
+import numpy as np
 
 
 @numba.jit(nopython=True)
@@ -39,7 +44,7 @@ def ChainsInteraction_update_energies(self):
     receptors """
     ChainsInteraction_update_energies_numba(self.substrates2, self.receptors,
                                             self.energies)
-
+    
 
 
 @numba.jit(nopython=True)
@@ -57,7 +62,7 @@ def ChainsInteraction_update_energies_receptor_numba(substrates2, receptor, out)
                     overlap += 1
             overlap_max = max(overlap_max, overlap)
         out[s] = overlap_max
-
+    
 
 def ChainsInteraction_update_energies_receptor(self, idx_r):
     """ updates the energy of the `idx_r`-th receptor """
@@ -65,6 +70,7 @@ def ChainsInteraction_update_energies_receptor(self, idx_r):
                                                      self.receptors[idx_r],
                                                      self.energies[:, idx_r])
 
+    
 
 
 @numba.jit(nopython=True)
@@ -103,49 +109,68 @@ def TetrisInteraction_update_energies_receptor(self, idx_r):
         
 
 
+def update_energies_check(obj, (func1, func2)):
+    """ checks the numba method versus the original one """
+    obj.energies[:] = 0
+    obj1, obj2 = obj, copy.deepcopy(obj)
+    func1(obj1)
+    func2(obj2)
+    return np.allclose(obj1.energies, obj2.energies)
+
+
+def update_energies_receptor_check(obj, (func1, func2)):
+    """ checks the numba method versus the original one """
+    obj.energies[:] = 0
+    obj1, obj2 = obj, copy.deepcopy(obj)
+    func1(obj1, 0)
+    func2(obj2, 0)
+    return np.allclose(obj1.energies, obj2.energies)
+
 
 
 class NumbaPatcher(object):
-    """ class for managing numba monkey patching in this package """   
-    # list of default methods that have a numba equivalent
-    default_methods = {
-        'model_block_1D.ChainsInteraction.update_energies':
-            model_block_1D.ChainsInteraction.update_energies,
-        'model_block_1D.ChainsInteraction.update_energies_receptor':
-            model_block_1D.ChainsInteraction.update_energies_receptor,
-        'model_tetris_1D.TetrisInteraction.update_energies_receptor':
-            model_tetris_1D.TetrisInteraction.update_energies_receptor,
-    }
-    # list of numba accelerated methods
+    """ class for managing numba monkey patching in this package. This class
+    only provides clas methods since it is used as a singleton. """   
+    
+    # list of methods that have a numba equivalent
     numba_methods = {
-        'model_block_1D.ChainsInteraction.update_energies':
+        'model_block_1D.ChainsInteraction.update_energies': (
+            model_block_1D.ChainsInteraction.update_energies,
             ChainsInteraction_update_energies,
-        'model_block_1D.ChainsInteraction.update_energies_receptor':
+            update_energies_check
+        ),
+        'model_block_1D.ChainsInteraction.update_energies_receptor': (
+            model_block_1D.ChainsInteraction.update_energies_receptor,
             ChainsInteraction_update_energies_receptor,
-        'model_tetris_1D.TetrisInteraction.update_energies_receptor':
+            update_energies_receptor_check
+        ),
+        'model_tetris_1D.TetrisInteraction.update_energies_receptor': (
+            model_tetris_1D.TetrisInteraction.update_energies_receptor,
             TetrisInteraction_update_energies_receptor,
+            update_energies_receptor_check,
+        ),
     }
     
-    enabled = False
+    enabled = False #< whether numba speed-up is enabled or not
 
 
     @classmethod
     def enable(cls):
         """ enables the numba methods """
-        for name, func in cls.numba_methods.iteritems():
+        for name, funcs in cls.numba_methods.iteritems():
             module, class_name, method_name = name.split('.')
             class_obj = getattr(globals()[module], class_name)
-            setattr(class_obj, method_name, func)
+            setattr(class_obj, method_name, funcs[1])
         cls.enabled = True
             
             
     @classmethod
     def disable(cls):
         """ disable the numba methods """
-        for name, func in cls.default_methods.iteritems():
+        for name, funcs in cls.numba_methods.iteritems():
             module, class_name, method_name = name.split('.')
             class_obj = getattr(globals()[module], class_name)
-            setattr(class_obj, method_name, func)
+            setattr(class_obj, method_name, funcs[0])
         cls.enabled = False
         
         
@@ -163,7 +188,25 @@ class NumbaPatcher(object):
                 print('Numba speed-ups have been enabled.')
             
             
-    #TODO: add a method that tests the numba functions versus the original ones
-    # just to make sure that the result is the same
-    # This requires a new method in the ChainsInteraction class that creates
-    # random data
+    @classmethod
+    def test_consistency(cls, repeat=10):
+        """ tests the consistency of the numba methods with their original
+        counter parts """        
+        problems = 0
+        for name, funcs in cls.numba_methods.iteritems():
+            # extract the class and the functions
+            module, class_name, _ = name.split('.')
+            class_obj = getattr(globals()[module], class_name)
+            test_func = funcs[2]
+            # check the functions multiple times
+            for _ in xrange(repeat):
+                test_obj = class_obj.create_test_instance()
+                if not test_func(test_obj, funcs[:2]):
+                    print('The numba implementation of `%s` is invalid.' % name)
+                    problems += 1
+                    break
+
+        if not problems:
+            print('All numba implementations are consistent.')
+            
+            

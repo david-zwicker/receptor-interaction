@@ -280,6 +280,20 @@ class ChainsInteraction(object):
                 (self.__class__.__name__, cnt_s, l_s, cnt_r, l_r, self.colors))
         
 
+    @classmethod
+    def create_test_instance(cls):
+        """ creates a instance of the class with random parameters """
+        # choose random parameters
+        colors = random.randint(4, 6)
+        cnt_s = random.randint(10, 20)
+        l_s = random.randint(10, 20)
+        cnt_r = random.randint(10, 20)
+        l_r = random.randint(5, 10)
+        substrates = cls.single_item_class(l_s, colors).choose_unique(cnt_s)
+        receptors = cls.single_item_class(l_r, colors).choose_unique(cnt_r)
+        return cls(substrates, receptors, colors)
+        
+
     def check_consistency(self):
         """ consistency check on the number of receptors and substrates """
         # check the supplied substrates
