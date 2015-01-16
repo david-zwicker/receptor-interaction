@@ -518,9 +518,12 @@ class ChainsInteractionCollection(object):
     
     def estimate_computation_speed(self):
         """ estimate the speed of the computation of a single iteration """
-        
-        # test function
-        func = lambda: self.get_random_state().get_mutual_information()
+        def func():
+            """ test function for estimating the speed """
+            self.get_random_state().get_mutual_information()
+        # call the function once to make sure that just in time compilation is
+        # not timed
+        func()
         
         # try different repetitions until the total run time is about 1 sec 
         number, duration = 1, 0
