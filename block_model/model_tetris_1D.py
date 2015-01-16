@@ -13,6 +13,26 @@ from .model_block_1D import (Chains, ChainsCollection, ChainsInteraction,
 
 
 
+def tetris_to_string(tetris, heights=None):
+    """ converts a single tetris block to a representative Unicode sequence """
+    chars = u"\u2581\u2582\u2583\u2585\u2586\u2587"
+    
+    if heights is None:
+        heights = max(tetris)
+    else:
+        assert heights <= max(tetris)
+    
+    if heights > len(chars):
+        raise ValueError('Can only visualize tetris with %d heights.' %
+                         len(chars))
+    
+    # calculate the height factor for emphasis
+    f = 2 if heights <= 3 else 1
+    # create the string
+    return ''.join(chars[f*h] for h in tetris)
+
+
+
 class Tetris(Chains):
     """ class that represents all tetris blocks of length l """
         

@@ -72,18 +72,40 @@ calc_entropy = get_fastest_entropy_function()
 def remove_redundant_chains(chains):
     """ removes chains that are the same (because of periodic boundary
     conditions) """
-    l_s = len(chains[0])
+    l = len(chains[0])
     colors = chains.max() + 1
-    base = colors**np.arange(l_s)
+    base = colors**np.arange(l)
     
     # calculate an characteristic number for each substrate
-    characters = [min(np.dot(s2[k:k + l_s], base)
-                      for k in xrange(l_s))
-                  for s2 in np.c_[chains, chains]]
+    characters = [min(np.dot(chains2[k:k + l], base)
+                      for k in xrange(l))
+                  for chains2 in np.c_[chains, chains]]
     
     _, idx = np.unique(characters, return_index=True)
     return chains[idx]
 
+
+
+def normalize_chain(chain):
+    """ picks the member of the equivalence class of necklaces that has the
+    lowest character. """
+    l = len(chain)
+    colors = chain.max() + 1
+    base = colors**np.arange(l)
+    chain2 = np.r_[chain, chain]
+    
+    # determine the chain with the lowest index
+    idx = np.argmin(np.dot(chain2[k:k + l], base)
+                    for k in xrange(l))
+    return chain2[idx]
+
+
+
+def normalize_chains(chains):
+    """ picks the member of the equivalence class of necklaces that has the
+    lowest character. """
+    return [normalize_chain(chain) for chain in chains]
+    
     
 
 class Chains(object):
