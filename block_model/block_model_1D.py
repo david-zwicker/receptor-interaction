@@ -52,7 +52,6 @@ def get_fastest_entropy_function():
     for test_func in (entropy_numpy, entropy_scipy, entropy_counter):
         try:
             dur = timeit.timeit(lambda: test_func(test_array), number=1000)
-            print dur
         except TypeError:
             # older numpy versions don't support `return_counts`
             pass
@@ -63,15 +62,6 @@ def get_fastest_entropy_function():
     return func_fastest
 
 calc_entropy = get_fastest_entropy_function()
-
-
-
-# try importing numba for speeding up calculations
-try:
-    import numba
-except ImportError:
-    numba = None
-    print('Numba was not found. Slow functions will be used')
 
 
 #===============================================================================
@@ -324,24 +314,23 @@ class ChainsInteraction(object):
             self._cache['substrates2'] = np.c_[self.substrates, self.substrates]
             return self._cache['substrates2']
         
-
-    def update_energies(self):
-        """
-        updates the energies between the substrates and the receptors
-        this assumes small receptors and large substrates
-        TODO: lift this constraint
-        """
-        _get_energies(self.substrates2, self.receptors, self.energies)
-
            
     def get_energies(self):
         """ calculates all the energies between the substrates and the
-        receptors """
-        cnt_s = len(self.substrates)
-        cnt_r = len(self.receptors)
-        self.energies = np.empty((cnt_s, cnt_r))
-        self.update_energies()
-        return self.energies
+        receptors
+        FIXME: currently only substrates longer than the receptors are supported
+        """
+        l_s = self.substrates2.shape[1] // 2
+        l_r = self.receptors.shape[1]
+    
+        # calculate the energies with a sliding window
+        energies = reduce(np.maximum, (
+            np.sum(self.substrates2[:, np.newaxis, i:i+l_r] ==
+                       self.receptors[np.newaxis, :, :],
+                   axis=2)
+            for i in xrange(l_s)
+        ))
+        return energies
                       
         
     def randomize_receptors(self):
@@ -360,6 +349,18 @@ class ChainsInteraction(object):
             self._cache['color_alternatives'] = colors
         return self._cache['color_alternatives']
     
+    
+    
+    def update_energies(self, idx_r):
+        """ updates the energy of the `idx_r`-th receptor """
+        receptor = self.receptors[idx_r]
+        l_s, l_r = self.substrates2.shape[1] // 2, len(receptor)
+        self.energies[:, idx_r] = reduce(np.maximum, (
+            np.sum(substrates2[:, i:i+l_r] == receptor[np.newaxis, :],
+                   axis=1)
+            for i in xrange(l_s)
+        ))
+                
         
     def mutate_receptors(self):
         """ mutate a single, random receptor """
@@ -377,11 +378,10 @@ class ChainsInteraction(object):
             idx = random.randint(0, self.colors - 2)
             self.receptors[x, y] = clrs[idx]
 
-        # recalculate the interaction energies of the changed receptor        
-        _update_energies(self.substrates2, self.receptors[x],
-                         self.energies[:, x])
+        # recalculate the interaction energies of the changed receptor
+        self.update_energies(x)
         
-        #assert np.sum(np.abs(self.energies - self.update_energies())) == 0
+        assert np.sum(np.abs(self.energies - self.update_energies())) == 0
         
 
     def get_binding_probabilities(self):
@@ -539,26 +539,16 @@ class ChainsInteractionCollection(object):
 #===============================================================================
 
 
-if numba:
-    # TODO: monkey patch these functions into the class
-    # define fast numerical functions using numba
-    
-    @numba.jit(nopython=True)
-    def _update_energies(substrates2, receptor, out):
-        """ update interaction energies of the `receptor` with the substrates
-        and save them in `out` """ 
-        cnt_s, l_s2 = substrates2.shape
-        l_r, l_s = len(receptor), l_s2 // 2
-        for s in xrange(cnt_s):
-            overlap_max = -1
-            for i in xrange(l_s):
-                overlap = 0
-                for k in xrange(l_r):
-                    if substrates2[s, i + k] == receptor[k]:
-                        overlap += 1
-                overlap_max = max(overlap_max, overlap)
-            out[s] = overlap_max
+# try importing numba for speeding up calculations
+try:
+    import numba
+except ImportError:
+    numba = None
+    print('Numba was not found. Slow functions will be used')
 
+
+if numba:
+    # define fast numerical functions using numba
 
     @numba.jit(nopython=True)
     def _get_energies(substrates2, receptors, out):
@@ -582,33 +572,70 @@ if numba:
                 out[x, y] = overlap_max
 
 
-else:
-    # define the slow substitute functions working without numba
+    def ChainsInteraction_get_energies_numba(self):
+        """ calculates all the energies between the substrates and the
+        receptors """
+        cnt_s = len(self.substrates)
+        cnt_r = len(self.receptors)
+        self.energies = np.empty((cnt_s, cnt_r))
+        _get_energies(self.substrates2, self.receptors, self.energies)
+        return self.energies
     
+    
+
+    @numba.jit(nopython=True)
     def _update_energies(substrates2, receptor, out):
         """ update interaction energies of the `receptor` with the substrates
         and save them in `out` """ 
-        l_s, l_r = substrates2.shape[1] // 2, len(receptor)
-        out[:] = reduce(np.maximum, (
-            np.sum(substrates2[:, i:i+l_r] == receptor[np.newaxis, :],
-                   axis=1)
-            for i in xrange(l_s)
-        ))
-            
-            
-    def _get_energies(substrates2, receptors, out):
-        """ calculates all the interaction energies between the substrates and
-        the receptors and stores them in `out` """
-        # get dimensions
-        l_s = substrates2.shape[1] // 2
-        l_r = receptors.shape[1]
+        cnt_s, l_s2 = substrates2.shape
+        l_r, l_s = len(receptor), l_s2 // 2
+        for s in xrange(cnt_s):
+            overlap_max = -1
+            for i in xrange(l_s):
+                overlap = 0
+                for k in xrange(l_r):
+                    if substrates2[s, i + k] == receptor[k]:
+                        overlap += 1
+                overlap_max = max(overlap_max, overlap)
+            out[s] = overlap_max
     
-        # calculate the energies with a sliding window
-        out[:] = reduce(np.maximum, (
-            np.sum(substrates2[:, np.newaxis, i:i+l_r] ==
-                       receptors[np.newaxis, :, :],
-                   axis=2)
-            for i in xrange(l_s)
-        ))
+    
+    def ChainsInteraction_update_energies(self, idx_r):
+        """ updates the energy of the `idx_r`-th receptor """
+        _update_energies(self.substrates2, self.receptors[idx_r],
+                         self.energies[:, idx_r])
+            
 
 
+    class NumbaPatcher(object):
+        """ class for managing numba monkey patching in this package """   
+        # list of default methods that have a numba equivalent
+        default_methods = {
+            'ChainsInteraction.get_energies':
+                ChainsInteraction.get_energies,
+            'ChainsInteraction.update_energies':
+                ChainsInteraction.update_energies,
+        }
+        # list of numba accelerated methods
+        numba_methods = {
+            'ChainsInteraction.get_energies':
+                ChainsInteraction_get_energies_numba,
+            'ChainsInteraction.update_energies':
+                ChainsInteraction.update_energies,
+        }
+    
+
+        def enable(self):
+            """ enables the numba methods """
+            for name, func in self.numba_methods.iteritems():
+                class_name, method_name = name.split('.')
+                setattr(globals()[class_name], method_name, func)
+                
+                
+        def disable(self):
+            """ disable the numba methods """
+            for name, func in self.default_methods.iteritems():
+                class_name, method_name = name.split('.')
+                setattr(globals()[class_name], method_name, func)
+                
+                
