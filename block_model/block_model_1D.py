@@ -30,23 +30,29 @@ from scipy.misc import comb
 from scipy.stats import itemfreq
 
 
-
-# determine which count_item function is quickest
-def get_fastest_count_items_function():
-    """ returns a function that counts how often each unique element appears in
-    an array. Here, several alternative definitions are tested an the fastest
-    one is returned """ 
-    count_items_functions = [
-        lambda arr: np.unique(arr, return_counts=True)[1],
-        lambda arr: itemfreq(arr)[:, 1],
-        lambda arr: np.array(Counter(arr).values()),
-    ]
+def get_fastest_entropy_function():
+    """ returns a function that calculates the entropy of a array of integers
+    Here, several alternative definitions are tested an the fastest one is
+    returned """ 
+    def entropy_numpy(arr):
+        """ entropy function based on numpy.unique """
+        fs = np.unique(arr, return_counts=True)[1]
+        return np.sum(fs*np.log(fs))
+    def entropy_scipy(arr):
+        """ entropy function based on scipy.stats.itemfreq """
+        fs = itemfreq(arr)[:, 1]
+        return np.sum(fs*np.log(fs))
+    def entropy_counter(arr):
+        """ entropy function based on collections.Counter """
+        return sum(val*math.log(val)
+                   for val in Counter(arr).itervalues())
 
     test_array = np.random.random_integers(0, 10, 100)
     func_fastest, dur_fastest = None, np.inf
-    for test_func in count_items_functions:
+    for test_func in (entropy_numpy, entropy_scipy, entropy_counter):
         try:
-            dur = timeit.timeit(lambda: test_func(test_array), number=100)
+            dur = timeit.timeit(lambda: test_func(test_array), number=1000)
+            print dur
         except TypeError:
             # older numpy versions don't support `return_counts`
             pass
@@ -56,7 +62,7 @@ def get_fastest_count_items_function():
 
     return func_fastest
 
-count_items = get_fastest_count_items_function()
+calc_entropy = get_fastest_entropy_function()
 
 
 
@@ -430,13 +436,11 @@ class ChainsInteraction(object):
         """
         output = self.get_output_vector()
         
-        # determine the contribution from the frequency distribution        
-        fs = count_items(output)
-        # assert cnt_s == sum(fs)
-        logsum_a = np.sum(fs*np.log(fs))
+        # determine the contribution from the output distribution        
+        entropy_o = calc_entropy(output)
         
         cnt_s = len(output)
-        return math.log(cnt_s) - logsum_a/cnt_s
+        return math.log(cnt_s) - entropy_o/cnt_s
 
     
     @property
