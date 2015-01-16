@@ -25,21 +25,39 @@ import math
 import numpy as np
 import timeit
 
+from collections import Counter
 from scipy.misc import comb
+from scipy.stats import itemfreq
 
-np_version = [int(t) for t in np.__version__.split('.')]
-if np_version >= [1, 9]:
-    # implement a count function using numpy
-    def count_items(arr):
-        """ returns the multiplicity of each unique item in the array """
-        return np.unique(arr, return_counts=True)[1]
-    
-else:
-    # implement a count function using python Counter
-    from scipy.stats import itemfreq
-    def count_items(arr):
-        """ returns the multiplicity of each unique item in the array """
-        return itemfreq(arr)[:, 1]
+
+
+# determine which count_item function is quickest
+def get_fastest_count_items_function():
+    """ returns a function that counts how often each unique element appears in
+    an array. Here, several alternative definitions are tested an the fastest
+    one is returned """ 
+    count_items_functions = [
+        lambda arr: np.unique(arr, return_counts=True)[1],
+        lambda arr: itemfreq(arr)[:, 1],
+        lambda arr: np.array(Counter(arr).values()),
+    ]
+
+    test_array = np.random.random_integers(0, 10, 100)
+    func_fastest, dur_fastest = None, np.inf
+    for test_func in count_items_functions:
+        try:
+            dur = timeit.timeit(lambda: test_func(test_array), number=100)
+        except TypeError:
+            # older numpy versions don't support `return_counts`
+            pass
+        else:
+            if dur < dur_fastest:
+                func_fastest, dur_fastest = test_func, dur
+
+    return func_fastest
+
+count_items = get_fastest_count_items_function()
+
 
 
 # try importing numba for speeding up calculations
