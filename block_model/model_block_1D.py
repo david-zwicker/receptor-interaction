@@ -194,11 +194,14 @@ class Chains(object):
 
 class ChainsCollection(object):
     """ class that represents all possible collections of `cnt` distinct chains
-     of length `l` """
+    of length `l` """
+    
+    single_item_class = Chains 
+    
      
     def __init__(self, cnt, l, colors=2):
         self.cnt = cnt
-        self.chains = Chains(l, colors)
+        self.chains = self.single_item_class(l, colors)
         
         # currently used to generate random chains
         self.l = l
@@ -223,7 +226,7 @@ class ChainsCollection(object):
             yield np.array(chain_col) 
 
 
-    def get_zero_chains(self):
+    def get_zero_elements(self):
         """ returns a list with chains of color 0 """
         return np.zeros((self.cnt, self.l), np.int)
 
@@ -244,8 +247,11 @@ class ChainsInteraction(object):
     """ class that represents the interaction between a set of substrates and a
     set of receptors.
     """
+    
     temperature = 1  #< temperature for equilibrium binding
     threshold = 1    #< threshold above which the receptor responds
+
+    single_item_class = Chains
 
     
     def __init__(self, substrates, receptors, colors,
@@ -261,7 +267,8 @@ class ChainsInteraction(object):
             self._cache = cache
             
         if energies is None:
-            self.energies = self.get_energies()
+            self.energies = np.zeros((len(substrates), len(receptors)))
+            self.update_energies()
         else:
             self.energies = energies
 
@@ -284,7 +291,7 @@ class ChainsInteraction(object):
         
         # check the supplied receptors
         cnt_r, l_r = self.receptors.shape
-        chains = Chains(l_r, self.colors)
+        chains = self.single_item_class(l_r, self.colors)
         if cnt_r > len(chains):
             raise RuntimeWarning('The number of supplied receptors is larger '
                                  'than the number of possible unique ones.')
@@ -315,7 +322,7 @@ class ChainsInteraction(object):
             return self._cache['substrates2']
         
            
-    def get_energies(self):
+    def update_energies(self):
         """ calculates all the energies between the substrates and the
         receptors
         FIXME: currently only substrates longer than the receptors are supported
@@ -324,13 +331,12 @@ class ChainsInteraction(object):
         l_r = self.receptors.shape[1]
     
         # calculate the energies with a sliding window
-        energies = reduce(np.maximum, (
+        self.energies[:] = reduce(np.maximum, (
             np.sum(self.substrates2[:, np.newaxis, i:i+l_r] ==
                        self.receptors[np.newaxis, :, :],
                    axis=2)
             for i in xrange(l_s)
         ))
-        return energies
                       
         
     def randomize_receptors(self):
@@ -380,7 +386,7 @@ class ChainsInteraction(object):
         # recalculate the interaction energies of the changed receptor
         self.update_energies_receptor(x)
         
-        # assert np.sum(np.abs(self.energies - self.get_energies())) == 0
+        # assert np.sum(np.abs(self.energies - self.update_energies())) == 0
         
 
     def get_binding_probabilities(self):
@@ -473,19 +479,25 @@ class ChainsInteractionCollection(object):
     """ class that represents all possible combinations of substrate and
     receptor interactions """
     
+    receptor_collection_class = ChainsCollection
+    interaction_class = ChainsInteraction
+    
+    
     def __init__(self, substrates, cnt_r, l_r, colors):      
         try:
             self.substrates = substrates.to_array()
         except AttributeError:
             self.substrates = np.asarray(substrates)
-        self.receptors_collection = ChainsCollection(cnt_r, l_r, colors)
+        self.receptors_collection = self.receptor_collection_class(cnt_r, l_r,
+                                                                   colors)
         self.colors = colors
 
 
     def __repr__(self):
-        return ('%s(%s, cnt=%d, l=%d, colors=%d)' %
-                (self.__class__.__name__, repr(self.substrates), self.cnt_r,
-                 self.l_r, self.colors))
+        return ('%s(%s, cnt_r=%d, l_r=%d, colors=%d)' %
+                (self.__class__.__name__, repr(self.substrates),
+                 self.receptors_collection.cnt,
+                 self.receptors_collection.l, self.colors))
         
         
     def __len__(self):
@@ -499,20 +511,20 @@ class ChainsInteractionCollection(object):
         #    * taking advantage of partially calculated energies
         
         # create an initial state object
-        receptors = self.receptors_collection.get_zero_chains()
-        state = ChainsInteraction(self.substrates, receptors, self.colors)
+        receptors = self.receptors_collection.get_zero_elements()
+        state = self.interaction_class(self.substrates, receptors, self.colors)
         
         # iterate over all receptors and update the state object
         for receptors in self.receptors_collection:
             state.receptors = receptors
-            state.energies[:] = state.get_energies()
+            state.update_energies()
             yield state
         
     
     def get_random_state(self):
         """ returns a randomly chosen chain interaction """
         receptors = self.receptors_collection.get_random_chains()
-        return ChainsInteraction(self.substrates, receptors, self.colors)
+        return self.interaction_class(self.substrates, receptors, self.colors)
     
     
     def estimate_computation_speed(self):
@@ -550,7 +562,7 @@ if numba:
     # define fast numerical functions using numba
 
     @numba.jit(nopython=True)
-    def _get_energies(substrates2, receptors, out):
+    def _update_energies(substrates2, receptors, out):
         """ calculates all the interaction energies between the substrates and
         the receptors and stores them in `out` """
         cnt_s, l_s2 = substrates2.shape
@@ -571,14 +583,10 @@ if numba:
                 out[x, y] = overlap_max
 
 
-    def ChainsInteraction_get_energies_numba(self):
+    def ChainsInteraction_update_energies_numba(self):
         """ calculates all the energies between the substrates and the
         receptors """
-        cnt_s = len(self.substrates)
-        cnt_r = len(self.receptors)
-        self.energies = np.empty((cnt_s, cnt_r))
-        _get_energies(self.substrates2, self.receptors, self.energies)
-        return self.energies
+        _update_energies(self.substrates2, self.receptors, self.energies)
     
     
 
@@ -610,15 +618,15 @@ if numba:
         """ class for managing numba monkey patching in this package """   
         # list of default methods that have a numba equivalent
         default_methods = {
-            'ChainsInteraction.get_energies':
-                ChainsInteraction.get_energies,
+            'ChainsInteraction.update_energies':
+                ChainsInteraction.update_energies,
             'ChainsInteraction.update_energies_receptor':
                 ChainsInteraction.update_energies_receptor,
         }
         # list of numba accelerated methods
         numba_methods = {
-            'ChainsInteraction.get_energies':
-                ChainsInteraction_get_energies_numba,
+            'ChainsInteraction.update_energies':
+                ChainsInteraction_update_energies_numba,
             'ChainsInteraction.update_energies_receptor':
                 ChainsInteraction.update_energies_receptor,
         }
