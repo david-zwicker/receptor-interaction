@@ -337,7 +337,7 @@ class ChainsInteraction(object):
         """ choose a completely new set of receptors """
         self.receptors = np.random.randint(0, self.colors,
                                            size=self.receptors.shape)
-        self.update_energies()
+        self.update_energies_receptor()
     
     
     @property
@@ -350,13 +350,12 @@ class ChainsInteraction(object):
         return self._cache['color_alternatives']
     
     
-    
-    def update_energies(self, idx_r):
+    def update_energies_receptor(self, idx_r):
         """ updates the energy of the `idx_r`-th receptor """
         receptor = self.receptors[idx_r]
         l_s, l_r = self.substrates2.shape[1] // 2, len(receptor)
         self.energies[:, idx_r] = reduce(np.maximum, (
-            np.sum(substrates2[:, i:i+l_r] == receptor[np.newaxis, :],
+            np.sum(self.substrates2[:, i:i+l_r] == receptor[np.newaxis, :],
                    axis=1)
             for i in xrange(l_s)
         ))
@@ -379,9 +378,9 @@ class ChainsInteraction(object):
             self.receptors[x, y] = clrs[idx]
 
         # recalculate the interaction energies of the changed receptor
-        self.update_energies(x)
+        self.update_energies_receptor(x)
         
-        assert np.sum(np.abs(self.energies - self.update_energies())) == 0
+        # assert np.sum(np.abs(self.energies - self.get_energies())) == 0
         
 
     def get_binding_probabilities(self):
@@ -496,7 +495,7 @@ class ChainsInteractionCollection(object):
     def __iter__(self):
         """ generates all possible chain interactions """
         #TODO: try to increase the performance by
-        #    * improving update_energies
+        #    * improving update_energies_receptor
         #    * taking advantage of partially calculated energies
         
         # create an initial state object
@@ -506,7 +505,7 @@ class ChainsInteractionCollection(object):
         # iterate over all receptors and update the state object
         for receptors in self.receptors_collection:
             state.receptors = receptors
-            state.update_energies()
+            state.energies[:] = state.get_energies()
             yield state
         
     
@@ -584,7 +583,7 @@ if numba:
     
 
     @numba.jit(nopython=True)
-    def _update_energies(substrates2, receptor, out):
+    def _update_energies_receptor(substrates2, receptor, out):
         """ update interaction energies of the `receptor` with the substrates
         and save them in `out` """ 
         cnt_s, l_s2 = substrates2.shape
@@ -600,10 +599,10 @@ if numba:
             out[s] = overlap_max
     
     
-    def ChainsInteraction_update_energies(self, idx_r):
+    def ChainsInteraction_update_energies_receptor(self, idx_r):
         """ updates the energy of the `idx_r`-th receptor """
-        _update_energies(self.substrates2, self.receptors[idx_r],
-                         self.energies[:, idx_r])
+        _update_energies_receptor(self.substrates2, self.receptors[idx_r],
+                                  self.energies[:, idx_r])
             
 
 
@@ -613,29 +612,32 @@ if numba:
         default_methods = {
             'ChainsInteraction.get_energies':
                 ChainsInteraction.get_energies,
-            'ChainsInteraction.update_energies':
-                ChainsInteraction.update_energies,
+            'ChainsInteraction.update_energies_receptor':
+                ChainsInteraction.update_energies_receptor,
         }
         # list of numba accelerated methods
         numba_methods = {
             'ChainsInteraction.get_energies':
                 ChainsInteraction_get_energies_numba,
-            'ChainsInteraction.update_energies':
-                ChainsInteraction.update_energies,
+            'ChainsInteraction.update_energies_receptor':
+                ChainsInteraction.update_energies_receptor,
         }
     
 
-        def enable(self):
+        @classmethod
+        def enable(cls):
             """ enables the numba methods """
-            for name, func in self.numba_methods.iteritems():
+            for name, func in cls.numba_methods.iteritems():
                 class_name, method_name = name.split('.')
                 setattr(globals()[class_name], method_name, func)
                 
                 
-        def disable(self):
+        @classmethod
+        def disable(cls):
             """ disable the numba methods """
-            for name, func in self.default_methods.iteritems():
+            for name, func in cls.default_methods.iteritems():
                 class_name, method_name = name.split('.')
                 setattr(globals()[class_name], method_name, func)
                 
                 
+    NumbaPatcher.enable()
