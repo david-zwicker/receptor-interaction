@@ -30,6 +30,7 @@ from scipy.misc import comb
 from scipy.stats import itemfreq
 
 
+
 def get_fastest_entropy_function():
     """ returns a function that calculates the entropy of a array of integers
     Here, several alternative definitions are tested an the fastest one is
@@ -69,12 +70,83 @@ calc_entropy = get_fastest_entropy_function()
 #===============================================================================
 
 
+class Chain(np.ndarray):
+    """ class representing a single chain """
+    
+    def __new__(cls, input_array, colors=None):
+        # Input array is an already formed ndarray instance
+        # We first cast to be our class type
+        obj = np.asarray(input_array).view(cls)
+        # add the new attribute to the created instance
+        if colors is None:
+            obj.colors = max(input_array) + 1
+        else:
+            obj.colors = colors
+        # Finally, we must return the newly created object:
+        return obj
+    
+    
+    def __array_finalize__(self, obj):
+        # see InfoArray.__array_finalize__ for comments
+        if obj is None:
+            return
+        self.colors = getattr(obj, 'colors', None)
+        
+    
+    def __str__(self):
+        return '%s(%s)' % (self.__class__.__name__,
+                           super(Chain, self).__str__())
+
+    
+    def normalize(self):
+        """ pick the member of the equivalence class of necklaces that has the
+        lowest character """
+        l = len(self)
+        colors = self.max() + 1
+        base = colors ** np.arange(l, 0, -1)
+        chain2 = np.r_[self, self]
+        
+        # determine the chain with the lowest index
+        idx = np.argmin([np.dot(chain2[k:k + l], base)
+                         for k in xrange(l)])
+        self[:] = chain2[idx:idx + l]
+        
+        
+    def get_mpl_collection(self, center=(0, 0), r_max=1, r_min=0.7, cmap=None,
+                           **kwargs):
+        """ create a matplotlib patch collection visualizing the chain
+        `center` denotes the center of the object
+        `r_max` is the outer radius of the highest block
+        `r_min` is the inner radius of all blocks
+        """
+        from matplotlib.patches import Wedge
+        from matplotlib.collections import PatchCollection
+        from matplotlib import cm
+        
+        if cmap is None:
+            cmap = cm.jet
+        
+        # create the individual patches
+        sector = 360 / len(self)
+        patches = []
+        for k in xrange(len(self)):
+            angle = k * sector
+            patches.append(Wedge(center, r_max, angle, angle + sector,
+                                 width=r_max - r_min, **kwargs))
+            
+        # combine the patches in a collection
+        pc = PatchCollection(patches, cmap=cmap)
+        pc.set_array(self)
+        return pc
+
+
+
 def remove_redundant_chains(chains):
     """ removes chains that are the same (because of periodic boundary
     conditions) """
     l = len(chains[0])
     colors = chains.max() + 1
-    base = colors**np.arange(l)
+    base = colors ** np.arange(l, 0, -1)
     
     # calculate an characteristic number for each substrate
     characters = [min(np.dot(chains2[k:k + l], base)
@@ -86,26 +158,11 @@ def remove_redundant_chains(chains):
 
 
 
-def normalize_chain(chain):
-    """ picks the member of the equivalence class of necklaces that has the
-    lowest character. """
-    l = len(chain)
-    colors = chain.max() + 1
-    base = colors**np.arange(l)
-    chain2 = np.r_[chain, chain]
-    
-    # determine the chain with the lowest index
-    idx = np.argmin(np.dot(chain2[k:k + l], base)
-                    for k in xrange(l))
-    return chain2[idx]
-
-
-
 def normalize_chains(chains):
     """ picks the member of the equivalence class of necklaces that has the
     lowest character. """
-    return [normalize_chain(chain) for chain in chains]
-    
+    return [Chain(chain).normalize() for chain in chains]
+
     
 
 class Chains(object):

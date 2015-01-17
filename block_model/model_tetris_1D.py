@@ -8,37 +8,69 @@ from __future__ import division
 
 import numpy as np
 
-from .model_block_1D import (Chains, ChainsCollection, ChainsInteraction,
+from .model_block_1D import (Chain, Chains, ChainsCollection, ChainsInteraction,
                              ChainsInteractionCollection)
 
 
 
-def tetris_to_string(tetris, heights=None):
-    """ converts a single tetris block to a representative Unicode sequence """
-    chars = u"\u2581\u2582\u2583\u2585\u2586\u2587"
+class Tetris(Chain):
+    """ class representing a single tetris block """
     
-    if heights is None:
-        heights = max(tetris)
-    else:
-        assert heights <= max(tetris)
+    @property
+    def heights(self):
+        return self.colors
     
-    if heights > len(chars):
-        raise ValueError('Can only visualize tetris with %d heights.' %
-                         len(chars))
     
-    # calculate the height factor for emphasis
-    f = 2 if heights <= 3 else 1
-    # create the string
-    return ''.join(chars[f*h] for h in tetris)
+    def to_string(self):
+        """ converts a single tetris block to a representative Unicode sequence """
+        chars = u"\u2581\u2582\u2583\u2585\u2586\u2587"
+        
+        if self.heights > len(chars):
+            raise ValueError('Can only visualize tetris with %d heights.' %
+                             len(chars))
+        
+        # calculate the height factor for emphasis
+        f = 2 if self.heights <= 3 else 1
+        # create the string
+        return ''.join(chars[f*h] for h in self)
+
+
+    def get_mpl_collection(self, center=(0, 0), r_max=1, r_min=0.5, 
+                           cmap=None, **kwargs):
+        """ create a matplotlib patch collection visualizing the chain
+        `center` denotes the center of the object
+        `r_max` is the outer radius of the highest block
+        `r_min` is the inner radius of all blocks
+        """
+        from matplotlib.patches import Wedge
+        from matplotlib.collections import PatchCollection
+        from matplotlib import cm
+        
+        if cmap is None:
+            cmap = cm.jet
+        
+        # create the individual patches
+        sector = 360 / len(self)
+        patches = []
+        for k, height in enumerate(self):
+            angle = k * sector
+            radius = r_min + (r_max - r_min)*(height + 1)/(self.colors + 1)
+            patches.append(Wedge(center, radius, angle, angle + sector,
+                                 width=radius - r_min, **kwargs))
+            
+        # combine the patches in a collection
+        pc = PatchCollection(patches, cmap=cmap)
+        pc.set_array(self)
+        return pc
 
 
 
-class Tetris(Chains):
+class TetrisBlocks(Chains):
     """ class that represents all tetris blocks of length l """
         
     def __init__(self, l, heights=2):
         self.heights = heights
-        super(Tetris, self).__init__(l, heights)
+        super(TetrisBlocks, self).__init__(l, heights)
         
         
     def __repr__(self):
@@ -51,7 +83,7 @@ class TetrisCollection(ChainsCollection):
     """ class that represents all possible collections of `cnt` distinct tetris
     blocks of length `l` """
 
-    single_item_class = Tetris 
+    single_item_class = TetrisBlocks 
     
      
     def __init__(self, cnt, l, heights=2):
@@ -71,7 +103,7 @@ class TetrisInteraction(ChainsInteraction):
     set of receptors built of tetris blocks.
     """
 
-    single_item_class = Tetris
+    single_item_class = TetrisBlocks
 
     
     def __init__(self, substrates, receptors, heights,
