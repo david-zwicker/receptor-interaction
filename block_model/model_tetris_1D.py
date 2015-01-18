@@ -120,7 +120,7 @@ class TetrisInteraction(ChainsInteraction):
                 (self.__class__.__name__, cnt_s, l_s, cnt_r, l_r, self.heights))
         
         
-    def update_energies_receptor(self, idx_r):
+    def update_energies_receptor(self, idx_r=0):
         """ updates the energy of the `idx_r`-th receptor """
         receptor = self.receptors[idx_r]
         l_s, l_r = self.substrates2.shape[1] // 2, len(receptor)

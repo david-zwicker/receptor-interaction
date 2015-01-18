@@ -9,12 +9,14 @@ methods.
 
 from __future__ import division
 
-import model_block_1D
-import model_tetris_1D
-
 import copy
 import numba
 import numpy as np
+import timeit
+
+import model_block_1D
+import model_tetris_1D
+
 
 
 @numba.jit(nopython=True)
@@ -40,8 +42,7 @@ def ChainsInteraction_update_energies_numba(substrates2, receptors, out):
 
 
 def ChainsInteraction_update_energies(self):
-    """ calculates all the energies between the substrates and the
-    receptors """
+    """ calculates all the energies between the substrates and the receptors """
     ChainsInteraction_update_energies_numba(self.substrates2, self.receptors,
                                             self.energies)
     
@@ -64,13 +65,92 @@ def ChainsInteraction_update_energies_receptor_numba(substrates2, receptor, out)
         out[s] = overlap_max
     
 
-def ChainsInteraction_update_energies_receptor(self, idx_r):
+def ChainsInteraction_update_energies_receptor(self, idx_r=0):
     """ updates the energy of the `idx_r`-th receptor """
     ChainsInteraction_update_energies_receptor_numba(self.substrates2,
                                                      self.receptors[idx_r],
                                                      self.energies[:, idx_r])
 
+
+
+@numba.jit(nopython=True)
+def ChainsInteraction_get_output_vector_numba(energies, temperature, threshold,
+                                              out, tmp):
+    """ calculate output vector for given receptors """
+    probs = tmp
+    cnt_s, cnt_r = energies.shape
+    threshold /= cnt_r #< normalize threshold to number of receptors
+     
+    # iterate over all substrates
+    for s in xrange(cnt_s):
+        if temperature == 0:
+            # determine minimal energies for each substrate
+            Emin = 1000
+            for r in xrange(cnt_r):
+                Emin = min(Emin, energies[s, r])
+            # determine the receptors that are activated
+            for r in xrange(cnt_r):
+                if energies[s, r] == Emin:
+                    tmp[r] = 1
+                else:
+                    tmp[r] = 0
+            
+        else:
+            # calculate interaction probabilities
+            for r in xrange(cnt_r):
+                tmp[r] = np.exp(energies[s, r]/temperature)
+            
+        # calculate normalization constant
+        norm = 0
+        for r in xrange(cnt_r):
+            norm += probs[r]
+            
+        # encode output in single integer
+        output = 0
+        base = 1
+        for r in xrange(cnt_r):
+            # only consider receptors above the threshold
+            if probs[r]/norm > threshold:
+                output += base
+            base *= 2
+        out[s] = output
+
+
+@numba.jit(nopython=True)
+def ChainsInteraction_get_mutual_information_numba(output_vector):
+    """ calculates the mutual information of the sorted output_vector """
+    # calculate the entropy in the output vector
+    entropy = 0
+    count = 1
+    last_val = output_vector[0]
+    for val in output_vector[1:]:
+        if val == last_val:
+            count += 1
+        else:
+            entropy += count*np.log(count)
+            last_val = val
+            count = 1
+    entropy += count*np.log(count)
     
+    cnt_s = len(output_vector)
+    return np.log(cnt_s) - entropy/cnt_s
+        
+    
+def ChainsInteraction_get_mutual_information(self):
+    """ calculate output vector for given receptors """
+    # calculate the resulting binding characteristics
+    cnt_s, cnt_r = self.energies.shape
+    output_vector = np.empty(cnt_s, np.int)
+    tmp = np.empty(cnt_r, np.double)
+    
+    # calculate the output vector
+    ChainsInteraction_get_output_vector_numba(self.energies, self.temperature,
+                                              self.threshold, output_vector,
+                                              tmp)
+    # calculate the mutual information
+    output_vector.sort()
+    return ChainsInteraction_get_mutual_information_numba(output_vector)
+
 
 
 @numba.jit(nopython=True)
@@ -101,7 +181,7 @@ def TetrisInteraction_update_energies_receptor_numba(substrates2, receptor, out)
 
 
 
-def TetrisInteraction_update_energies_receptor(self, idx_r):
+def TetrisInteraction_update_energies_receptor(self, idx_r=0):
     """ updates the energy of the `idx_r`-th receptor """
     TetrisInteraction_update_energies_receptor_numba(self.substrates2,
                                                      self.receptors[idx_r],
@@ -118,19 +198,15 @@ def update_energies_check(obj, (func1, func2)):
     return np.allclose(obj1.energies, obj2.energies)
 
 
-def update_energies_receptor_check(obj, (func1, func2)):
+def generic_output_check(obj, (func1, func2)):
     """ checks the numba method versus the original one """
-    obj.energies[:] = 0
-    obj1, obj2 = obj, copy.deepcopy(obj)
-    func1(obj1, 0)
-    func2(obj2, 0)
-    return np.allclose(obj1.energies, obj2.energies)
+    return np.allclose(func1(obj), func2(obj))
 
 
 
 class NumbaPatcher(object):
     """ class for managing numba monkey patching in this package. This class
-    only provides clas methods since it is used as a singleton. """   
+    only provides class methods since it is used as a singleton. """   
     
     # list of methods that have a numba equivalent
     numba_methods = {
@@ -142,12 +218,17 @@ class NumbaPatcher(object):
         'model_block_1D.ChainsInteraction.update_energies_receptor': (
             model_block_1D.ChainsInteraction.update_energies_receptor,
             ChainsInteraction_update_energies_receptor,
-            update_energies_receptor_check
+            update_energies_check
+        ),
+        'model_block_1D.ChainsInteraction.get_mutual_information': (
+            model_block_1D.ChainsInteraction.get_mutual_information,
+            ChainsInteraction_get_mutual_information,
+            generic_output_check
         ),
         'model_tetris_1D.TetrisInteraction.update_energies_receptor': (
             model_tetris_1D.TetrisInteraction.update_energies_receptor,
             TetrisInteraction_update_energies_receptor,
-            update_energies_receptor_check,
+            update_energies_check,
         ),
     }
     
@@ -197,16 +278,45 @@ class NumbaPatcher(object):
             # extract the class and the functions
             module, class_name, _ = name.split('.')
             class_obj = getattr(globals()[module], class_name)
-            test_func = funcs[2]
+
+            # extract the test function
+            try:
+                test_func = funcs[2]
+            except IndexError:
+                continue
+            
             # check the functions multiple times
             for _ in xrange(repeat):
                 test_obj = class_obj.create_test_instance()
                 if not test_func(test_obj, funcs[:2]):
                     print('The numba implementation of `%s` is invalid.' % name)
+                    print('Native implementation yields', funcs[0](test_obj))
+                    print('Numba implementation yields', funcs[1](test_obj))
                     problems += 1
                     break
 
         if not problems:
             print('All numba implementations are consistent.')
             
+            
+    @classmethod
+    def test_speedup(cls, repeat=10000):
+        """ tests the speed up of the supplied methods """
+        for name, funcs in cls.numba_methods.iteritems():
+            # extract the class and the functions
+            module, class_name, func_name = name.split('.')
+            class_obj = getattr(globals()[module], class_name)
+            test_obj = class_obj.create_test_instance()
+            func1, func2 = funcs[:2]
+            
+            # initialize possible caches
+            func1(test_obj)
+            func2(test_obj)
+            
+            # check the runtime of the original implementation
+            dur1 = timeit.timeit(lambda: func1(test_obj), number=repeat)
+            # check the runtime of the improved implementation
+            dur2 = timeit.timeit(lambda: func2(test_obj), number=repeat)
+            
+            print('%s.%s: %g times' % (class_name, func_name, dur1/dur2))
             

@@ -11,7 +11,7 @@ conditions, such that these chains are equivalent to necklaces in combinatorics.
 Each chain is represented by an integer numpy array of length l. Sets of 
 chains are represented by a 2D-numpy array where the first dimension
 corresponds to different chains.
-
+    
 Special objects are used to represent the set of all unique chains and the
 interaction between sets of substrate and receptor chains.
 '''
@@ -33,7 +33,7 @@ from scipy.stats import itemfreq
 
 def get_fastest_entropy_function():
     """ returns a function that calculates the entropy of a array of integers
-    Here, several alternative definitions are tested an the fastest one is
+    Here, several alternative definitions are tested and the fastest one is
     returned """ 
     def entropy_numpy(arr):
         """ entropy function based on numpy.unique """
@@ -52,7 +52,8 @@ def get_fastest_entropy_function():
     func_fastest, dur_fastest = None, np.inf
     for test_func in (entropy_numpy, entropy_scipy, entropy_counter):
         try:
-            dur = timeit.timeit(lambda: test_func(test_array), number=1000)
+            test_func(test_array)
+            dur = timeit.timeit(lambda: test_func(test_array), number=10000)
         except TypeError:
             # older numpy versions don't support `return_counts`
             pass
@@ -370,7 +371,13 @@ class ChainsInteraction(object):
         l_r = random.randint(5, 10)
         substrates = cls.single_item_class(l_s, colors).choose_unique(cnt_s)
         receptors = cls.single_item_class(l_r, colors).choose_unique(cnt_r)
-        return cls(substrates, receptors, colors)
+        
+        # create object
+        obj = cls(substrates, receptors, colors)
+        obj.temperature = np.random.randint(0, 3)
+        obj.threshold = np.random.random()
+        
+        return obj
         
 
     def check_consistency(self):
@@ -449,7 +456,7 @@ class ChainsInteraction(object):
         return self._cache['color_alternatives']
     
     
-    def update_energies_receptor(self, idx_r):
+    def update_energies_receptor(self, idx_r=0):
         """ updates the energy of the `idx_r`-th receptor """
         receptor = self.receptors[idx_r]
         l_s, l_r = self.substrates2.shape[1] // 2, len(receptor)
