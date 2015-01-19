@@ -21,7 +21,6 @@ from __future__ import division
 import fractions
 import itertools
 import random
-import math
 import numpy as np
 import timeit
 
@@ -38,14 +37,14 @@ def get_fastest_entropy_function():
     def entropy_numpy(arr):
         """ entropy function based on numpy.unique """
         fs = np.unique(arr, return_counts=True)[1]
-        return np.sum(fs*np.log(fs))
+        return np.sum(fs*np.log2(fs))
     def entropy_scipy(arr):
         """ entropy function based on scipy.stats.itemfreq """
         fs = itemfreq(arr)[:, 1]
-        return np.sum(fs*np.log(fs))
+        return np.sum(fs*np.log2(fs))
     def entropy_counter(arr):
         """ entropy function based on collections.Counter """
-        return sum(val*math.log(val)
+        return sum(val*np.log2(val)
                    for val in Counter(arr).itervalues())
 
     test_array = np.random.random_integers(0, 10, 100)
@@ -522,7 +521,7 @@ class ChainsInteraction(object):
             return self._cache['binary_base']
         except KeyError:
             cnt_r = len(self.receptors)
-            self._cache['binary_base'] = 2 ** np.arange(cnt_r)
+            self._cache['binary_base'] = np.exp2(np.arange(cnt_r))
             return self._cache['binary_base']
         
         
@@ -545,7 +544,7 @@ class ChainsInteraction(object):
         entropy_o = calc_entropy(output)
         
         cnt_s = len(output)
-        return math.log(cnt_s) - entropy_o/cnt_s
+        return np.log2(cnt_s) - entropy_o/cnt_s
 
     
     @property
@@ -566,10 +565,10 @@ class ChainsInteraction(object):
     def mutual_information_max(self):
         """ return upper bound for mutual information """
         # maximal mutual information restricted by the output
-        MI_receptors = np.log(self.output_count)
+        MI_receptors = np.log2(self.output_count)
         
         # maximal mutual information restricted by substrates
-        MI_substrates = np.log(self.substrate_count)
+        MI_substrates = np.log2(self.substrate_count)
         
         return min(MI_receptors, MI_substrates)
 

@@ -126,13 +126,13 @@ def ChainsInteraction_get_mutual_information_numba(output_vector):
         if val == last_val:
             count += 1
         else:
-            entropy += count*np.log(count)
+            entropy += count*np.log2(count)
             last_val = val
             count = 1
-    entropy += count*np.log(count)
+    entropy += count*np.log2(count)
     
     cnt_s = len(output_vector)
-    return np.log(cnt_s) - entropy/cnt_s
+    return np.log2(cnt_s) - entropy/cnt_s
         
     
 def ChainsInteraction_get_mutual_information(self):
