@@ -22,7 +22,7 @@ class Tetris(Chain):
     
     
     def to_string(self):
-        """ converts a single tetris block to a representative Unicode sequence """
+        """ returns Unicode string representing the tetris block """
         chars = u"\u2581\u2582\u2583\u2585\u2586\u2587"
         
         if self.heights > len(chars):

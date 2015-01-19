@@ -56,10 +56,10 @@ def ChainsInteraction_update_energies_receptor_numba(substrates2, receptor, out)
     l_r, l_s = len(receptor), l_s2 // 2
     for s in xrange(cnt_s):
         overlap_max = 0
-        for i in xrange(l_s):
+        for start in xrange(l_s):
             overlap = 0
             for k in xrange(l_r):
-                if substrates2[s, i + k] == receptor[k]:
+                if substrates2[s, start + k] == receptor[k]:
                     overlap += 1
             overlap_max = max(overlap_max, overlap)
         out[s] = overlap_max
@@ -75,9 +75,8 @@ def ChainsInteraction_update_energies_receptor(self, idx_r=0):
 
 @numba.jit(nopython=True)
 def ChainsInteraction_get_output_vector_numba(energies, temperature, threshold,
-                                              out, tmp):
+                                              out, probabilities):
     """ calculate output vector for given receptors """
-    probs = tmp
     cnt_s, cnt_r = energies.shape
     threshold /= cnt_r #< normalize threshold to number of receptors
      
@@ -88,29 +87,29 @@ def ChainsInteraction_get_output_vector_numba(energies, temperature, threshold,
             Emin = 1000
             for r in xrange(cnt_r):
                 Emin = min(Emin, energies[s, r])
+                
             # determine the receptors that are activated
+            normalization = 0
             for r in xrange(cnt_r):
                 if energies[s, r] == Emin:
-                    tmp[r] = 1
+                    probabilities[r] = 1
+                    normalization += 1
                 else:
-                    tmp[r] = 0
+                    probabilities[r] = 0
             
         else:
             # calculate interaction probabilities
+            normalization = 0
             for r in xrange(cnt_r):
-                tmp[r] = np.exp(energies[s, r]/temperature)
-            
-        # calculate normalization constant
-        norm = 0
-        for r in xrange(cnt_r):
-            norm += probs[r]
+                probabilities[r] = np.exp(energies[s, r]/temperature)
+                normalization += probabilities[r]
             
         # encode output in single integer
         output = 0
         base = 1
         for r in xrange(cnt_r):
             # only consider receptors above the threshold
-            if probs[r]/norm > threshold:
+            if probabilities[r] > threshold*normalization:
                 output += base
             base *= 2
         out[s] = output
@@ -189,7 +188,7 @@ def TetrisInteraction_update_energies_receptor(self, idx_r=0):
         
 
 
-def update_energies_check(obj, (func1, func2)):
+def check_energies(obj, (func1, func2)):
     """ checks the numba method versus the original one """
     obj.energies[:] = 0
     obj1, obj2 = obj, copy.deepcopy(obj)
@@ -198,7 +197,7 @@ def update_energies_check(obj, (func1, func2)):
     return np.allclose(obj1.energies, obj2.energies)
 
 
-def generic_output_check(obj, (func1, func2)):
+def check_return_value(obj, (func1, func2)):
     """ checks the numba method versus the original one """
     return np.allclose(func1(obj), func2(obj))
 
@@ -213,22 +212,22 @@ class NumbaPatcher(object):
         'model_block_1D.ChainsInteraction.update_energies': (
             model_block_1D.ChainsInteraction.update_energies,
             ChainsInteraction_update_energies,
-            update_energies_check
+            check_energies
         ),
         'model_block_1D.ChainsInteraction.update_energies_receptor': (
             model_block_1D.ChainsInteraction.update_energies_receptor,
             ChainsInteraction_update_energies_receptor,
-            update_energies_check
+            check_energies
         ),
         'model_block_1D.ChainsInteraction.get_mutual_information': (
             model_block_1D.ChainsInteraction.get_mutual_information,
             ChainsInteraction_get_mutual_information,
-            generic_output_check
+            check_return_value
         ),
         'model_tetris_1D.TetrisInteraction.update_energies_receptor': (
             model_tetris_1D.TetrisInteraction.update_energies_receptor,
             TetrisInteraction_update_energies_receptor,
-            update_energies_check,
+            check_energies,
         ),
     }
     

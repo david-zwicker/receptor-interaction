@@ -607,7 +607,6 @@ class ChainsInteractionCollection(object):
     def __iter__(self):
         """ generates all possible chain interactions """
         #TODO: try to increase the performance by
-        #    * improving update_energies_receptor
         #    * taking advantage of partially calculated energies
         
         # create an initial state object
