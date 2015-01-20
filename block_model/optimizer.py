@@ -14,10 +14,10 @@ class ReceptorOptimizerExhaustive(object):
     """ class for finding optimal receptor distribution using and exhaustive
     search """
 
-    def __init__(self, state_collection):
+    def __init__(self, possible_states):
         """ `state_collection` must be a class that handles all possible states
         """
-        self.state_collection = state_collection
+        self.possible_states = possible_states
         self.info = {'states_considered': 0}
 
 
@@ -27,7 +27,7 @@ class ReceptorOptimizerExhaustive(object):
         Extra information about the optimization procedure is stored in the
         `info` dictionary of this object """
         state_best, MI_best = None, -1
-        for state in self.state_collection:
+        for state in self.possible_states:
             MI = state.get_mutual_information()
             if MI > MI_best:
                 state_best, MI_best = state, MI
@@ -35,7 +35,7 @@ class ReceptorOptimizerExhaustive(object):
             elif MI == MI_best:
                 multiplicity += 1
            
-        self.info['states_considered'] = len(self.state_collection)
+        self.info['states_considered'] = len(self.possible_states)
         self.info['multiplicity'] = multiplicity     
         return state_best, MI_best
 
@@ -55,14 +55,15 @@ class ReceptorOptimizerAnnealing(Annealer):
     def __init__(self, possible_states):
         """ `state_collection` must be a class that handles all possible states
         """
+        self.possible_states = possible_states
         initial_state = possible_states.get_random_state()
         super(ReceptorOptimizerAnnealing, self).__init__(initial_state)
 
 
     def move(self):
         """ change a single bit in any of the receptor vectors """
-        self.state.mutate_receptors()
-
+        self.possible_states.mutate_state(self.state)
+        
         
     def energy(self):
         """ returns the energy of the current state """

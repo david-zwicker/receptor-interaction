@@ -8,8 +8,8 @@ from __future__ import division
 
 import numpy as np
 
-from .model_block_1D import (Chain, Chains, ChainsCollection, ChainsInteraction,
-                             ChainsInteractionCollection)
+from .model_block_1D import (Chain, Chains, ChainCollections, ChainsInteraction,
+                             ChainsInteractionPossibilities)
 
 
 
@@ -68,27 +68,28 @@ class Tetris(Chain):
 class TetrisBlocks(Chains):
     """ class that represents all tetris blocks of length l """
         
-    def __init__(self, l, heights=2):
+    def __init__(self, l, heights=2, fixed_length=True):
         self.heights = heights
-        super(TetrisBlocks, self).__init__(l, heights)
+        super(TetrisBlocks, self).__init__(l, heights, fixed_length)
         
         
     def __repr__(self):
-        return ('%s(l=%d, heights=%d)' %
-                (self.__class__.__name__, self.l, self.heights))
+        return ('%s(l=%d, heights=%d, fixed_length=%s)' %
+                (self.__class__.__name__, self.l, self.heights,
+                 self.fixed_length))
 
 
 
-class TetrisCollection(ChainsCollection):
+class TetrisCollections(ChainCollections):
     """ class that represents all possible collections of `cnt` distinct tetris
     blocks of length `l` """
 
     single_item_class = TetrisBlocks 
     
      
-    def __init__(self, cnt, l, heights=2):
+    def __init__(self, cnt, l, heights=2, fixed_length=True):
         self.heights = heights
-        super(TetrisCollection, self).__init__(cnt, l, heights)
+        super(TetrisCollections, self).__init__(cnt, l, heights, fixed_length)
         
         
     def __repr__(self):
@@ -114,10 +115,15 @@ class TetrisInteraction(ChainsInteraction):
 
         
     def __repr__(self):
-        cnt_s, l_s = self.substrates.shape
-        cnt_r, l_r = self.receptors.shape
-        return ('%s(%d Substrates(l=%d), %d Receptors(l=%d), heights=%d)' %
-                (self.__class__.__name__, cnt_s, l_s, cnt_r, l_r, self.heights))
+        return ('%s(substrates=%s, receptors=%s, heights=%d)' %
+                (self.__class__.__name__, self.substrates, self.receptors,
+                 self.heights))
+        
+
+    def __str__(self):
+        return ('%s(%d Substrates, %d Receptors, heights=%d)' %
+                (self.__class__.__name__, len(self.substrates),
+                 len(self.receptors), self.heights))
         
         
     def update_energies_receptor(self, idx_r=0):
@@ -153,22 +159,21 @@ class TetrisInteraction(ChainsInteraction):
         
         
         
-class TetrisInteractionCollection(ChainsInteractionCollection):        
+class TetrisInteractionPossibilities(ChainsInteractionPossibilities):        
     """ class that represents all possible combinations of substrate and
     receptor interactions """
 
-    receptor_collection_class = TetrisCollection
+    receptor_collection_class = TetrisCollections
     interaction_class = TetrisInteraction
     
     
-    def __init__(self, substrates, cnt_r, l_r, heights):      
-        self.heights = heights
-        super(TetrisInteractionCollection, self).__init__(substrates, cnt_r,
-                                                          l_r, heights)
+    def __init__(self, substrates, possible_receptors):      
+        super(TetrisInteractionPossibilities, self).__init__(substrates, 
+                                                             possible_receptors)
 
+    @property
+    def heights(self):
+        return self.possible_receptors.heights
 
-    def __repr__(self):
-        return ('%s(%s, cnt_r=%d, l_r=%d, colors=%d)' %
-                (self.__class__.__name__, repr(self.substrates),
-                 self.receptors_collection.cnt,
-                 self.receptors_collection.l, self.colors))
+        
+        

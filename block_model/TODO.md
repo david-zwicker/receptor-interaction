@@ -1,3 +1,5 @@
+* fork simanneal from github and implement a counter for measuring the
+    performance of the simulated annealing on the fly
 * add a collection without periodic boundary conditions
 * Classes necessary:
     - single blocks

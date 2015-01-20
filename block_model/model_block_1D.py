@@ -9,8 +9,9 @@ of chains, where each chain can have a color. We consider periodic boundary
 conditions, such that these chains are equivalent to necklaces in combinatorics.
 
 Each chain is represented by an integer numpy array of length l. Sets of 
-chains are represented by a 2D-numpy array where the first dimension
-corresponds to different chains.
+chains are generally represented by a list of chains. If all chains are of the 
+same length, sets of chains may also be represented by a 2D-numpy array where 
+the first dimension corresponds to different chains.
     
 Special objects are used to represent the set of all unique chains and the
 interaction between sets of substrate and receptor chains.
@@ -97,6 +98,15 @@ class Chain(np.ndarray):
         return '%s(%s)' % (self.__class__.__name__,
                            super(Chain, self).__str__())
 
+
+    @property
+    def character(self):
+        """ return an integer representing this chain. This integer uniquely 
+        identifies this chain among all chains of equal length with equal number
+        of colors """
+        base = self.colors ** np.arange(len(self), 0, -1)
+        return np.dot(self, base)
+
     
     def normalize(self):
         """ pick the member of the equivalence class of necklaces that has the
@@ -143,18 +153,33 @@ class Chain(np.ndarray):
 
 def remove_redundant_chains(chains):
     """ removes chains that are the same (because of periodic boundary
-    conditions) """
-    l = len(chains[0])
-    colors = chains.max() + 1
-    base = colors ** np.arange(l, 0, -1)
-    
-    # calculate an characteristic number for each substrate
-    characters = [min(np.dot(chains2[k:k + l], base)
-                      for k in xrange(l))
-                  for chains2 in np.c_[chains, chains]]
-    
-    _, idx = np.unique(characters, return_index=True)
-    return chains[idx]
+    conditions)
+    """
+    if isinstance(chains, np.ndarray):
+        # optimized implementation for chains of equal length
+        l = len(chains[0])
+        colors = chains.max() + 1
+        base = colors ** np.arange(l, 0, -1)
+        
+        # calculate an characteristic number for each substrate
+        characters = [min(np.dot(chains2[k:k + l], base)
+                          for k in xrange(l))
+                      for chains2 in np.c_[chains, chains]]
+        
+        _, idx = np.unique(characters, return_index=True)
+        
+        result = chains[idx]
+        
+    else:
+        # general implementation for chains of unequal lengths
+        result = []
+        chains = sorted(chains, key=len)
+        for l, sublist in itertools.groupby(chains, key=len):
+            # handle all chains of a certain length
+            arr = np.atleast_2d(list(sublist))
+            result.extend(remove_redundant_chains(arr))
+        
+    return result
 
 
 
@@ -168,38 +193,56 @@ def normalize_chains(chains):
 class Chains(object):
     """ class that represents all chains of length l """
     
-    def __init__(self, l, colors=2):
+    def __init__(self, l, colors=2, fixed_length=True):
         self.l = l
         self.colors = colors
+        self.fixed_length = fixed_length
         
         
     def __repr__(self):
-        return ('%s(l=%d, colors=%d)' %
-                (self.__class__.__name__, self.l, self.colors))
+        if self.fixed_length:
+            l = '%d' % self.l
+        else:
+            l = '1..%d' % self. l
+        return ('%s(l=%s, colors=%d)' %
+                (self.__class__.__name__, l, self.colors))
         
         
+    @property
+    def lengths(self):
+        """ returns iterator enumerating all possible block lengths """ 
+        if self.fixed_length:
+            return (self.l,)
+        else:
+            return xrange(1, self.l + 1)
+            
+            
+    @property
+    def counts(self):
+        """ returns the number of unique chains of all possible lengths
+        The algorithm used here is based on Eq. 1 from the paper
+            F. Ruskey, C. Savage, T. Min Yih Wang, J. of Algorithms, 13 (1992).
+        """
+        for l in self.lengths:
+            Nb = 0
+            for d in xrange(1, l + 1):
+                Nb += self.colors ** fractions.gcd(l, d)
+            Nb //= self.l
+            yield Nb            
+            
+    
     def __len__(self):
         """ returns the number of unique chains of length l
         This number is equivalent to len(list(self)), but uses a more efficient
         mathematical solution based on Eq. 1 in the paper
             F. Ruskey, C. Savage, T. Min Yih Wang, J. of Algorithms, 13 (1992).
         """
-        Nb = 0
-        for d in xrange(1, self.l + 1):
-            Nb += self.colors ** fractions.gcd(self.l, d)
-        Nb //= self.l
-        
-        return Nb
+        # add up the counts from each lengths
+        return sum(count for count in self.counts)
     
     
-    def __iter__(self):
-        """ returns a generator for all unique chains.
-
-        Note that the return value is a view into an internal array. Use
-            [v.copy() for v in self]
-        instead of
-            list(self)
-        to create a list of all chains.  
+    def _iterate_fixed_length(self, l):
+        """ returns a generator for all unique chains of length `l`.
 
         This method uses the FKM algorithm published in
         * H. Fredricksen and J. Maiorana, Necklaces of beads in k colors and
@@ -207,7 +250,7 @@ class Chains(object):
         * H. Fredricksen and I. J. Kessler, An algorithm for generating 
             necklaces of beads in two colors, Discrete Math. 61 (1986), 181-188.
         """
-        l, k = self.l, self.colors
+        k = self.colors
         a = np.zeros(l, np.int)
         yield a
         
@@ -224,6 +267,20 @@ class Chains(object):
                 if i < 0:
                     return
 
+    
+    def __iter__(self):
+        """ returns a generator for all unique chains.
+
+        Note that the return value is a view into an internal array. Use
+            [v.copy() for v in self]
+        instead of
+            list(self)
+        to create a list of all chains.
+        """
+        for l in self.lengths:
+            for chain in self._iterate_fixed_length(l):
+                yield chain
+
 
     def to_list(self):
         """ returns an array of all unique chains of length `l` with `colors`
@@ -232,18 +289,75 @@ class Chains(object):
     
     
     def to_array(self):
-        """ returns an array of all unique chains of length `l` with `colors`
-        possible colors per chain """
-        res = np.zeros((len(self), self.l), np.int)
-        for k, c in enumerate(self):
-            res[k, :] = c
+        """ returns an array of all possible chains """
+        if self.fixed_length:
+            res = np.zeros((len(self), self.l), np.int)
+            for k, c in enumerate(self):
+                res[k, :] = c
+                
+        else:
+            raise RuntimeError('Cannot represent chains of variable length as '
+                               'a single array.')
+                
         return res
+
+
+
+class ChainCollections(object):
+    """ class that represents all possible collections of `cnt` distinct chains
+    of length `l` """
     
+    single_item_class = Chains 
     
-    def choose_unique(self, cnt):
-        """ chooses `cnt` unique chains consisting of `l` chains with
+     
+    def __init__(self, cnt, l, colors=2, fixed_length=True):
+        self.cnt = cnt
+        self.fixed_length = fixed_length
+        self.chains = self.single_item_class(l, colors, fixed_length)
+        
+        # currently used to generate random chains
+        self.l = l
+        self.colors = colors
+        
+        
+    def __repr__(self):
+        if self.fixed_length:
+            l = '%d' % self.l
+        else:
+            l = '1..%d' % self. l
+        return ('%s(cnt=%d, l=%s, colors=%d)' %
+                (self.__class__.__name__, self.cnt, l, self.colors))
+        
+    
+    def __len__(self):
+        """ returns the number of possible receptor combinations """
+        num = len(self.chains)
+        return comb(num, self.cnt, exact=True)
+               
+
+    def __iter__(self):
+        """ generates all possible receptor combinations """
+        chains = self.chains.to_list()
+        if self.fixed_length:
+            for chain_col in itertools.combinations(chains, self.cnt):
+                yield np.array(chain_col)
+                
+        else: 
+            for chain_col in itertools.combinations(chains, self.cnt):
+                yield chain_col
+
+
+    def get_zero_elements(self):
+        """ returns a list with chains of color 0 """
+        return np.zeros((self.cnt, self.l), np.int)
+
+
+    def _choose_random_fixed_length(self, cnt, l):
+        """ chooses `cnt` unique chains consisting of `l` blocks with
         `colors` unique colors """
-        l, colors = self.l, self.colors
+        # TODO: ensure that the chains would also appear in the iteration
+        # => return the normalized version of a chain
+        colors = self.colors
         
         base = colors ** np.arange(l)
         
@@ -267,54 +381,30 @@ class Chains(object):
                 raise RuntimeError('Cannot find %d chains of length %d' % 
                                    (cnt, l))
         return chains
-
-
-
-
-class ChainsCollection(object):
-    """ class that represents all possible collections of `cnt` distinct chains
-    of length `l` """
     
-    single_item_class = Chains 
     
-     
-    def __init__(self, cnt, l, colors=2):
-        self.cnt = cnt
-        self.chains = self.single_item_class(l, colors)
-        
-        # currently used to generate random chains
-        self.l = l
-        self.colors = colors
-        
-        
-    def __repr__(self):
-        return ('%s(cnt=%d, l=%d, colors=%d)' %
-                (self.__class__.__name__, self.cnt, self.l, self.colors))
-        
-    
-    def __len__(self):
-        """ returns the number of possible receptor combinations """
-        num = len(self.chains)
-        return comb(num, self.cnt, exact=True)
-               
-
-    def __iter__(self):
-        """ generates all possible receptor combinations """
-        chains = self.chains.to_array()
-        for chain_col in itertools.combinations(chains, self.cnt):
-            yield np.array(chain_col) 
-
-
-    def get_zero_elements(self):
-        """ returns a list with chains of color 0 """
-        return np.zeros((self.cnt, self.l), np.int)
-
-
-    def get_random_chains(self):
-        """ returns a random set of chains """
-        # TODO: ensure that the chains are unique
-        # TODO: ensure that the chains would also appear in the iteration
-        return np.random.randint(0, self.colors, size=(self.cnt, self.l))
+    def choose_random(self):
+        """ chooses a random representation from the current collection """
+        if self.fixed_length:
+            chains = self._choose_random_fixed_length(self.cnt, self.l)
+            chains = np.array(chains)
+                    
+        else:
+            # choose a length distribution
+            counts = list(self.chains.counts)
+            lengths = Counter()
+            for _ in xrange(self.cnt):
+                weights = np.array(counts) / np.sum(counts)
+                k = np.random.choice(self.l, p=weights)
+                lengths[k + 1] += 1
+                counts[k] -= 1
+                
+            # choose chains according to this length distribution
+            chains = []
+            for l, cnt in lengths.iteritems():
+                chains.extend(self._choose_random_fixed_length(cnt, l))
+                    
+        return chains
     
     
 #===============================================================================
@@ -330,14 +420,14 @@ class ChainsInteraction(object):
     temperature = 1  #< temperature for equilibrium binding
     threshold = 1    #< threshold above which the receptor responds
 
-    single_item_class = Chains
+    item_collection_class = ChainCollections
 
     
     def __init__(self, substrates, receptors, colors,
                  cache=None, energies=None):
         
-        self.substrates = np.asarray(substrates)
-        self.receptors = np.asarray(receptors)
+        self.substrates = substrates
+        self.receptors = receptors
         self.colors = colors
         
         if cache is None:
@@ -353,10 +443,15 @@ class ChainsInteraction(object):
 
         
     def __repr__(self):
-        cnt_s, l_s = self.substrates.shape
-        cnt_r, l_r = self.receptors.shape
-        return ('%s(%d Substrates(l=%d), %d Receptors(l=%d), colors=%d)' %
-                (self.__class__.__name__, cnt_s, l_s, cnt_r, l_r, self.colors))
+        return ('%s(substrates=%s, receptors=%s, colors=%d)' %
+                (self.__class__.__name__, self.substrates, self.receptors,
+                 self.colors))
+        
+
+    def __str__(self):
+        return ('%s(%d Substrates, %d Receptors, colors=%d)' %
+                (self.__class__.__name__, len(self.substrates),
+                 len(self.receptors), self.colors))
         
 
     @classmethod
@@ -368,8 +463,8 @@ class ChainsInteraction(object):
         l_s = random.randint(10, 20)
         cnt_r = random.randint(10, 20)
         l_r = random.randint(5, 10)
-        substrates = cls.single_item_class(l_s, colors).choose_unique(cnt_s)
-        receptors = cls.single_item_class(l_r, colors).choose_unique(cnt_r)
+        substrates = cls.item_collection_class(cnt_s, l_s, colors).choose_random()
+        receptors = cls.item_collection_class(cnt_r, l_r, colors).choose_random()
         
         # create object
         obj = cls(substrates, receptors, colors)
@@ -389,11 +484,11 @@ class ChainsInteraction(object):
                                  redundant_count)
         
         # check the supplied receptors
-        cnt_r, l_r = self.receptors.shape
-        chains = self.single_item_class(l_r, self.colors)
-        if cnt_r > len(chains):
-            raise RuntimeWarning('The number of supplied receptors is larger '
-                                 'than the number of possible unique ones.')
+#         cnt_r, l_r = self.receptors.shape
+#         chains = self.single_item_class(l_r, self.colors)
+#         if cnt_r > len(chains):
+#             raise RuntimeWarning('The number of supplied receptors is larger '
+#                                  'than the number of possible unique ones.')
     
         unique_receptors = remove_redundant_chains(self.receptors)
         redundant_count = len(self.receptors) - len(unique_receptors)
@@ -406,8 +501,12 @@ class ChainsInteraction(object):
         """ copies the current interaction state to allow the receptors to
         be mutated. The substrates and the cache will be shared between this
         object and its copy """
-        return self.__class__(self.substrates, self.receptors.copy(),
-                              self.colors, self._cache, self.energies.copy())
+        if isinstance(self.receptors, np.ndarray):
+            receptors = self.receptors.copy()
+        else:
+            receptors = self.receptors[:]
+        return self.__class__(self.substrates, receptors, self.colors,
+                              self._cache, self.energies.copy())
         
         
     @property
@@ -419,74 +518,57 @@ class ChainsInteraction(object):
         except KeyError:
             self._cache['substrates2'] = np.c_[self.substrates, self.substrates]
             return self._cache['substrates2']
-        
-           
-    def update_energies(self):
-        """ calculates all the energies between the substrates and the
-        receptors
-        FIXME: currently only substrates longer than the receptors are supported
-        """
-        l_s = self.substrates2.shape[1] // 2
-        l_r = self.receptors.shape[1]
-    
-        # calculate the energies with a sliding window
-        self.energies[:] = reduce(np.maximum, (
-            np.sum(self.substrates2[:, np.newaxis, i:i+l_r] ==
-                       self.receptors[np.newaxis, :, :],
-                   axis=2)
-            for i in xrange(l_s)
-        ))
-                      
-        
-    def randomize_receptors(self):
-        """ choose a completely new set of receptors """
-        self.receptors = np.random.randint(0, self.colors,
-                                           size=self.receptors.shape)
-        self.update_energies_receptor()
-    
-    
-    @property
-    def color_alternatives(self):
-        """ look-up table for changing the color of a single block """
-        if 'color_alternatives' not in self._cache:
-            colors = [np.r_[0:c, c+1:self.colors]
-                      for c in xrange(self.colors)] 
-            self._cache['color_alternatives'] = colors
-        return self._cache['color_alternatives']
     
     
     def update_energies_receptor(self, idx_r=0):
         """ updates the energy of the `idx_r`-th receptor """
         receptor = self.receptors[idx_r]
-        l_s, l_r = self.substrates2.shape[1] // 2, len(receptor)
+        l_r = len(receptor)
+        l_s = self.substrates2.shape[1] // 2 
         self.energies[:, idx_r] = reduce(np.maximum, (
             np.sum(self.substrates2[:, i:i+l_r] == receptor[np.newaxis, :],
                    axis=1)
             for i in xrange(l_s)
         ))
-                
         
-    def mutate_receptors(self):
-        """ mutate a single, random receptor """
-        cnt_r, l_r = self.receptors.shape
-
-        # choose one point on one receptor that will be mutated        
-        x = random.randint(0, cnt_r - 1)
-        y = random.randint(0, l_r - 1)
-        if self.colors == 2:
-            # restricted to two colors => flip color
-            self.receptors[x, y] = 1 - self.receptors[x, y]
+                   
+    def update_energies(self):
+        """ calculates all the energies between the substrates and the
+        receptors
+        FIXME: currently only substrates longer than the receptors are supported
+        """
+        if isinstance(self.receptors, np.ndarray):
+            # efficient implementation for the case of equal receptor lengths
+            l_s = self.substrates2.shape[1] // 2
+            l_r = self.receptors.shape[1]
+        
+            # calculate the energies with a sliding window
+            self.energies[:] = reduce(np.maximum, (
+                np.sum(self.substrates2[:, np.newaxis, i:i+l_r] ==
+                           self.receptors[np.newaxis, :, :],
+                       axis=2)
+                for i in xrange(l_s)
+            ))
+            
         else:
-            # more than two colors => use random choice
-            clrs = self.color_alternatives[self.receptors[x, y]]
-            idx = random.randint(0, self.colors - 2)
-            self.receptors[x, y] = clrs[idx]
-
-        # recalculate the interaction energies of the changed receptor
-        self.update_energies_receptor(x)
+            # general implementation for receptors of unequal lengths
+            for idx_r in xrange(len(self.receptors)):
+                self.update_energies_receptor(idx_r)
+                
+                      
         
-        # assert np.sum(np.abs(self.energies - self.update_energies())) == 0
-        
+    def randomize_receptors(self):
+        """ choose a completely new set of receptors """
+        if isinstance(self.receptors, np.ndarray):
+            # create numpy array representing the receptors
+            self.receptors = np.random.randint(0, self.colors,
+                                               size=self.receptors.shape)
+            self.update_energies_receptor()
+            
+        else:
+            # choose random receptors of unequal length
+            raise NotImplementedError
+    
 
     def get_binding_probabilities(self):
         """
@@ -574,33 +656,40 @@ class ChainsInteraction(object):
 
 
 
-class ChainsInteractionCollection(object):
+class ChainsInteractionPossibilities(object):
     """ class that represents all possible combinations of substrate and
     receptor interactions """
     
-    receptor_collection_class = ChainsCollection
     interaction_class = ChainsInteraction
     
     
-    def __init__(self, substrates, cnt_r, l_r, colors):      
+    def __init__(self, substrates, possible_receptors):    
+        self.substrates = substrates
+        self.possible_receptors = possible_receptors
+        
         try:
-            self.substrates = substrates.to_array()
+            if self.substrates.fixed_length:
+                self.substrates_data = substrates.to_array()
+            else:
+                self.substrates_data = substrates.to_list()
         except AttributeError:
-            self.substrates = np.asarray(substrates)
-        self.receptors_collection = self.receptor_collection_class(cnt_r, l_r,
-                                                                   colors)
-        self.colors = colors
+            self.substrates_data = substrates
+            
+        self._cache = {}
+
+    @property
+    def colors(self):
+        return self.possible_receptors.colors
 
 
     def __repr__(self):
-        return ('%s(%s, cnt_r=%d, l_r=%d, colors=%d)' %
+        return ('%s(substrates=%s, receptors=%s)' %
                 (self.__class__.__name__, repr(self.substrates),
-                 self.receptors_collection.cnt,
-                 self.receptors_collection.l, self.colors))
+                 repr(self.possible_receptors)))
         
         
     def __len__(self):
-        return len(self.receptors_collection)
+        return len(self.possible_receptors)
     
     
     def __iter__(self):
@@ -609,11 +698,12 @@ class ChainsInteractionCollection(object):
         #    * taking advantage of partially calculated energies
         
         # create an initial state object
-        receptors = self.receptors_collection.get_zero_elements()
-        state = self.interaction_class(self.substrates, receptors, self.colors)
+        receptors = self.possible_receptors.get_zero_elements()
+        state = self.interaction_class(self.substrates_data, receptors,
+                                       self.colors)
         
         # iterate over all receptors and update the state object
-        for receptors in self.receptors_collection:
+        for receptors in self.possible_receptors:
             state.receptors = receptors
             state.update_energies()
             yield state
@@ -621,9 +711,97 @@ class ChainsInteractionCollection(object):
     
     def get_random_state(self):
         """ returns a randomly chosen chain interaction """
-        receptors = self.receptors_collection.get_random_chains()
-        return self.interaction_class(self.substrates, receptors, self.colors)
+        receptors = self.possible_receptors.choose_random()
+        return self.interaction_class(self.substrates_data, receptors,
+                                      self.colors)
     
+    
+    @property
+    def color_alternatives(self):
+        """ look-up table for changing the color of a single block """
+        try:
+            return self._cache['color_alternatives']
+        except:
+            colors = [np.r_[0:c, c+1:self.colors]
+                      for c in xrange(self.colors)] 
+            self._cache['color_alternatives'] = colors
+            return self._cache['color_alternatives']
+    
+
+    @property
+    def length_change_rates(self):
+        """ returns a list that contains the probabilities with which a
+        receptor changes length when mutated.
+        The returned array contains the accumulated probabilities of two events:
+            decreasing the chain length
+            increasing the chain length
+        """
+        try:
+            return self._cache['length_change_rates']
+        except KeyError:
+            rates = [(0, 1)] #< initialize for chains of zero length
+            counts = list(self.possible_receptors.chains.counts)
+            max_l = self.possible_receptors.l
+            for k in xrange(max_l): # k == l - 1
+                # count how many possible states there are
+                num_dec = 0 if k == 0 else counts[k - 1]
+                num_none = counts[k]
+                num_inc = 0 if k == max_l - 1 else counts[k + 1]
+                num_tot = num_dec + num_none + num_inc
+                # calculate the according rates
+                rate_dec = num_dec/num_tot
+                rate_inc = num_inc/num_tot
+                rates.append((rate_dec, rate_dec + rate_inc))
+                
+            self._cache['length_change_rates'] = rates
+            return self._cache['length_change_rates']
+                
+        
+    def _mutate_receptor_block(self, receptor, colors):
+        """ mutates a single block in a receptor """
+        # choose one point on one receptor that will be mutated        
+        block = random.randint(0, len(receptor) - 1)
+        if colors == 2:
+            # restricted to two colors => flip color
+            receptor[block] = 1 - receptor[block]
+        else:
+            # more than two colors => use random choice
+            clrs = self.color_alternatives[receptor[block]]
+            idx = random.randint(0, colors - 2)
+            receptor[block] = clrs[idx]
+        
+        
+    def mutate_state(self, state):
+        """ mutate a single, random receptor """
+        # choose one receptor that will be mutated
+        idx_r = random.randint(0, len(state.receptors) - 1)
+        receptor = state.receptors[idx_r]
+        
+        if self.possible_receptors.fixed_length:
+            # mutate one block of the chosen receptor
+            self._mutate_receptor_block(receptor, state.colors)
+            
+        else:
+            # change the receptor length of mutate one block
+            # choose a new length for the receptor
+            rates = self.length_change_rates[len(receptor)]
+            rnd = random.random()
+            if rnd < rates[0]:
+                # decrease the receptor length
+                state.receptors[idx_r] = receptor[:-1]
+            elif rnd < rates[1]:
+                # increase the receptor length
+                block = random.randint(0, state.colors - 1)
+                state.receptors[idx_r] = np.r_[receptor[:-1], block]
+            else:
+                # keep the receptor length unchanged
+                self._mutate_receptor_block(receptor, state.colors)
+
+        # recalculate the interaction energies of the changed receptor
+        state.update_energies_receptor(idx_r)
+        
+        # assert np.sum(np.abs(self.energies - self.update_energies())) == 0
+            
     
     def estimate_computation_speed(self):
         """ estimate the speed of the computation of a single iteration """

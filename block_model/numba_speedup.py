@@ -16,6 +16,32 @@ import timeit
 
 import model_block_1D
 import model_tetris_1D
+from model_block_1D import calc_entropy  # @UnusedImport
+
+
+
+@numba.jit(nopython=True)
+def ChainsInteraction_update_energies_receptor_numba(substrates2, receptor, out):
+    """ update interaction energies of the `receptor` with the substrates
+    and save them in `out` """ 
+    cnt_s, l_s2 = substrates2.shape
+    l_r, l_s = len(receptor), l_s2 // 2
+    for s in xrange(cnt_s):
+        overlap_max = 0
+        for start in xrange(l_s):
+            overlap = 0
+            for k in xrange(l_r):
+                if substrates2[s, start + k] == receptor[k]:
+                    overlap += 1
+            overlap_max = max(overlap_max, overlap)
+        out[s] = overlap_max
+    
+
+def ChainsInteraction_update_energies_receptor(self, idx_r=0):
+    """ updates the energy of the `idx_r`-th receptor """
+    ChainsInteraction_update_energies_receptor_numba(self.substrates2,
+                                                     self.receptors[idx_r],
+                                                     self.energies[:, idx_r])
 
 
 
@@ -43,33 +69,15 @@ def ChainsInteraction_update_energies_numba(substrates2, receptors, out):
 
 def ChainsInteraction_update_energies(self):
     """ calculates all the energies between the substrates and the receptors """
-    ChainsInteraction_update_energies_numba(self.substrates2, self.receptors,
-                                            self.energies)
-    
-
-
-@numba.jit(nopython=True)
-def ChainsInteraction_update_energies_receptor_numba(substrates2, receptor, out):
-    """ update interaction energies of the `receptor` with the substrates
-    and save them in `out` """ 
-    cnt_s, l_s2 = substrates2.shape
-    l_r, l_s = len(receptor), l_s2 // 2
-    for s in xrange(cnt_s):
-        overlap_max = 0
-        for start in xrange(l_s):
-            overlap = 0
-            for k in xrange(l_r):
-                if substrates2[s, start + k] == receptor[k]:
-                    overlap += 1
-            overlap_max = max(overlap_max, overlap)
-        out[s] = overlap_max
-    
-
-def ChainsInteraction_update_energies_receptor(self, idx_r=0):
-    """ updates the energy of the `idx_r`-th receptor """
-    ChainsInteraction_update_energies_receptor_numba(self.substrates2,
-                                                     self.receptors[idx_r],
-                                                     self.energies[:, idx_r])
+    if isinstance(self.receptors, np.ndarray):
+        ChainsInteraction_update_energies_numba(self.substrates2,
+                                                self.receptors,
+                                                self.energies)
+    else:
+        for idx_r, receptor in enumerate(self.receptors):
+            ChainsInteraction_update_energies_receptor_numba(self.substrates2,
+                                                             receptor,
+                                                             self.energies[:, idx_r])    
 
 
 
@@ -118,6 +126,9 @@ def ChainsInteraction_get_output_vector_numba(energies, temperature, threshold,
 @numba.jit(nopython=True)
 def ChainsInteraction_get_mutual_information_numba(output_vector):
     """ calculates the mutual information of the sorted output_vector """
+    if len(output_vector) == 0:
+        return 0
+    
     # calculate the entropy in the output vector
     entropy = 0
     count = 1
@@ -209,14 +220,14 @@ class NumbaPatcher(object):
     
     # list of methods that have a numba equivalent
     numba_methods = {
-        'model_block_1D.ChainsInteraction.update_energies': (
-            model_block_1D.ChainsInteraction.update_energies,
-            ChainsInteraction_update_energies,
-            check_energies
-        ),
         'model_block_1D.ChainsInteraction.update_energies_receptor': (
             model_block_1D.ChainsInteraction.update_energies_receptor,
             ChainsInteraction_update_energies_receptor,
+            check_energies
+        ),
+        'model_block_1D.ChainsInteraction.update_energies': (
+            model_block_1D.ChainsInteraction.update_energies,
+            ChainsInteraction_update_energies,
             check_energies
         ),
         'model_block_1D.ChainsInteraction.get_mutual_information': (
