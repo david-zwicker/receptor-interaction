@@ -10,6 +10,7 @@ methods.
 from __future__ import division
 
 import copy
+import functools
 import numba
 import numpy as np
 import timeit
@@ -37,7 +38,7 @@ def ChainsInteraction_update_energies_receptor_numba(substrates2, receptor, out)
         out[s] = overlap_max
     
 
-def ChainsInteraction_update_energies_receptor(self, idx_r=0):
+def ChainsInteraction_update_energies_receptor(self, idx_r):
     """ updates the energy of the `idx_r`-th receptor """
     ChainsInteraction_update_energies_receptor_numba(self.substrates2,
                                                      self.receptors[idx_r],
@@ -191,7 +192,7 @@ def TetrisInteraction_update_energies_receptor_numba(substrates2, receptor, out)
 
 
 
-def TetrisInteraction_update_energies_receptor(self, idx_r=0):
+def TetrisInteraction_update_energies_receptor(self, idx_r):
     """ updates the energy of the `idx_r`-th receptor """
     TetrisInteraction_update_energies_receptor_numba(self.substrates2,
                                                      self.receptors[idx_r],
@@ -219,26 +220,27 @@ class NumbaPatcher(object):
     only provides class methods since it is used as a singleton. """   
     
     # list of methods that have a numba equivalent
+    #TODO: the arguments should be dictionaries for clearer meaning
     numba_methods = {
         'model_block_1D.ChainsInteraction.update_energies_receptor': (
             model_block_1D.ChainsInteraction.update_energies_receptor,
             ChainsInteraction_update_energies_receptor,
-            check_energies
+            check_energies, {'idx_r': 0}
         ),
         'model_block_1D.ChainsInteraction.update_energies': (
             model_block_1D.ChainsInteraction.update_energies,
             ChainsInteraction_update_energies,
-            check_energies
+            check_energies, {}
         ),
         'model_block_1D.ChainsInteraction.get_mutual_information': (
             model_block_1D.ChainsInteraction.get_mutual_information,
             ChainsInteraction_get_mutual_information,
-            check_return_value
+            check_return_value, {}
         ),
         'model_tetris_1D.TetrisInteraction.update_energies_receptor': (
             model_tetris_1D.TetrisInteraction.update_energies_receptor,
             TetrisInteraction_update_energies_receptor,
-            check_energies,
+            check_energies, {'idx_r': 0}
         ),
     }
     
@@ -298,10 +300,12 @@ class NumbaPatcher(object):
             # check the functions multiple times
             for _ in xrange(repeat):
                 test_obj = class_obj.create_test_instance()
-                if not test_func(test_obj, funcs[:2]):
+                func1 = functools.partial(funcs[0], **funcs[3])
+                func2 = functools.partial(funcs[1], **funcs[3])
+                if not test_func(test_obj, (func1, func2)):
                     print('The numba implementation of `%s` is invalid.' % name)
-                    print('Native implementation yields', funcs[0](test_obj))
-                    print('Numba implementation yields', funcs[1](test_obj))
+                    print('Native implementation yields', func1(test_obj))
+                    print('Numba implementation yields', func2(test_obj))
                     problems += 1
                     break
 
@@ -317,7 +321,8 @@ class NumbaPatcher(object):
             module, class_name, func_name = name.split('.')
             class_obj = getattr(globals()[module], class_name)
             test_obj = class_obj.create_test_instance()
-            func1, func2 = funcs[:2]
+            func1 = functools.partial(funcs[0], **funcs[3])
+            func2 = functools.partial(funcs[1], **funcs[3])
             
             # initialize possible caches
             func1(test_obj)

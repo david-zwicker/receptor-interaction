@@ -49,18 +49,23 @@ class Tetris(Chain):
         if cmap is None:
             cmap = cm.jet
         
-        # create the individual patches
-        sector = 360 / len(self)
-        patches = []
-        for k, height in enumerate(self):
-            angle = k * sector
-            radius = r_min + (r_max - r_min)*(height + 1)/(self.colors + 1)
-            patches.append(Wedge(center, radius, angle, angle + sector,
-                                 width=radius - r_min, **kwargs))
+        if self.cyclic:
+            # create the individual patches
+            sector = 360 / len(self)
+            patches = []
+            for k, height in enumerate(self):
+                angle = k * sector
+                radius = r_min + (r_max - r_min)*(height + 1)/(self.colors + 1)
+                patches.append(Wedge(center, radius, angle, angle + sector,
+                                     width=radius - r_min, **kwargs))
+                
+            # combine the patches in a collection
+            pc = PatchCollection(patches, cmap=cmap)
+            pc.set_array(self)
             
-        # combine the patches in a collection
-        pc = PatchCollection(patches, cmap=cmap)
-        pc.set_array(self)
+        else:
+            raise NotImplementedError
+            
         return pc
 
 
@@ -68,15 +73,15 @@ class Tetris(Chain):
 class TetrisBlocks(Chains):
     """ class that represents all tetris blocks of length l """
         
-    def __init__(self, l, heights=2, fixed_length=True):
+    def __init__(self, l, heights=2, fixed_length=True, cyclic=False):
         self.heights = heights
-        super(TetrisBlocks, self).__init__(l, heights, fixed_length)
+        super(TetrisBlocks, self).__init__(l, heights, fixed_length, cyclic)
         
         
     def __repr__(self):
-        return ('%s(l=%d, heights=%d, fixed_length=%s)' %
+        return ('%s(l=%d, heights=%d, fixed_length=%s, cyclic=%s)' %
                 (self.__class__.__name__, self.l, self.heights,
-                 self.fixed_length))
+                 self.fixed_length, self.cyclic))
 
 
 
@@ -84,18 +89,12 @@ class TetrisCollections(ChainCollections):
     """ class that represents all possible collections of `cnt` distinct tetris
     blocks of length `l` """
 
-    single_item_class = TetrisBlocks 
+    single_item_class = TetrisBlocks
+    colors_str = 'heights'
     
-     
-    def __init__(self, cnt, l, heights=2, fixed_length=True):
-        self.heights = heights
-        super(TetrisCollections, self).__init__(cnt, l, heights, fixed_length)
-        
-        
-    def __repr__(self):
-        return ('%s(cnt=%d, l=%d, heights=%d)' %
-                (self.__class__.__name__, self.cnt, self.l, self.heights))
-        
+    @property
+    def heights(self):
+        return self.colors        
         
         
 
@@ -126,7 +125,7 @@ class TetrisInteraction(ChainsInteraction):
                  len(self.receptors), self.heights))
         
         
-    def update_energies_receptor(self, idx_r=0):
+    def update_energies_receptor(self, idx_r):
         """ updates the energy of the `idx_r`-th receptor """
         receptor = self.receptors[idx_r]
         l_s, l_r = self.substrates2.shape[1] // 2, len(receptor)

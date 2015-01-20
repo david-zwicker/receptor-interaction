@@ -15,6 +15,9 @@ the first dimension corresponds to different chains.
     
 Special objects are used to represent the set of all unique chains and the
 interaction between sets of substrate and receptor chains.
+
+FIXME: receptors (or generally the smaller part in the interaction) are not
+allowed to be cyclic -- only the large part can be cyclic
 '''
 
 from __future__ import division
@@ -74,7 +77,7 @@ calc_entropy = get_fastest_entropy_function()
 class Chain(np.ndarray):
     """ class representing a single chain """
     
-    def __new__(cls, input_array, colors=None):
+    def __new__(cls, input_array, colors=None, cyclic=False):
         # Input array is an already formed ndarray instance
         # We first cast to be our class type
         obj = np.asarray(input_array).view(cls)
@@ -83,6 +86,7 @@ class Chain(np.ndarray):
             obj.colors = max(input_array) + 1
         else:
             obj.colors = colors
+        obj.cyclic = cyclic
         # Finally, we must return the newly created object:
         return obj
     
@@ -92,11 +96,13 @@ class Chain(np.ndarray):
         if obj is None:
             return
         self.colors = getattr(obj, 'colors', None)
+        self.cyclic = getattr(obj, 'cyclic', False)
         
     
     def __str__(self):
-        return '%s(%s)' % (self.__class__.__name__,
-                           super(Chain, self).__str__())
+        return ('%s(%s, cyclic=%s)' %
+                (self.__class__.__name__, super(Chain, self).__str__(),
+                 self.cyclic))
 
 
     @property
@@ -107,20 +113,31 @@ class Chain(np.ndarray):
         base = self.colors ** np.arange(len(self), 0, -1)
         return np.dot(self, base)
 
+        
+    def normalized(self):
+        """ returns the member of the equivalence class of necklaces that has
+        the lowest character if the chain is cyclic.
+        If self.cyclic=False, this just returns the chain itself """
+        if self.cyclic:
+            l = len(self)
+            colors = self.max() + 1
+            base = colors ** np.arange(l, 0, -1)
+            chain2 = np.r_[self, self]
+            
+            # determine the chain with the lowest index
+            idx = np.argmin([np.dot(chain2[k:k + l], base)
+                             for k in xrange(l)])
+            return chain2[idx:idx + l]
+        
+        else:
+            return self
+    
     
     def normalize(self):
-        """ pick the member of the equivalence class of necklaces that has the
-        lowest character """
-        l = len(self)
-        colors = self.max() + 1
-        base = colors ** np.arange(l, 0, -1)
-        chain2 = np.r_[self, self]
-        
-        # determine the chain with the lowest index
-        idx = np.argmin([np.dot(chain2[k:k + l], base)
-                         for k in xrange(l)])
-        self[:] = chain2[idx:idx + l]
-        
+        """ changes the current chain to the member of the equivalence class of
+        necklaces that has the lowest character """
+        self[:] = self.normalized()
+    
         
     def get_mpl_collection(self, center=(0, 0), r_max=1, r_min=0.7, cmap=None,
                            **kwargs):
@@ -132,21 +149,27 @@ class Chain(np.ndarray):
         from matplotlib.patches import Wedge
         from matplotlib.collections import PatchCollection
         from matplotlib import cm
-        
+
         if cmap is None:
             cmap = cm.jet
         
-        # create the individual patches
-        sector = 360 / len(self)
-        patches = []
-        for k in xrange(len(self)):
-            angle = k * sector
-            patches.append(Wedge(center, r_max, angle, angle + sector,
-                                 width=r_max - r_min, **kwargs))
+        if self.cyclic:        
             
-        # combine the patches in a collection
-        pc = PatchCollection(patches, cmap=cmap)
-        pc.set_array(self)
+            # create the individual patches
+            sector = 360 / len(self)
+            patches = []
+            for k in xrange(len(self)):
+                angle = k * sector
+                patches.append(Wedge(center, r_max, angle, angle + sector,
+                                     width=r_max - r_min, **kwargs))
+                
+            # combine the patches in a collection
+            pc = PatchCollection(patches, cmap=cmap)
+            pc.set_array(self)
+            
+        else:
+            raise NotImplementedError
+        
         return pc
 
 
@@ -186,17 +209,30 @@ def remove_redundant_chains(chains):
 def normalize_chains(chains):
     """ picks the member of the equivalence class of necklaces that has the
     lowest character. """
-    return [Chain(chain).normalize() for chain in chains]
+    result = []
+    colors = chains.max()
+    chains = sorted(chains, key=len)
+    for _, group in itertools.groupby(chains, key=len):
+        # handle all chains of a certain length
+        sublist = []
+        for chain in group:
+            chain = Chain(chain, colors=colors)
+            chain.normalize()
+            sublist.append(chain)
+        sublist.sort(key=lambda c: c.character)
+        result.extend(sublist)
+    return result
 
     
 
 class Chains(object):
     """ class that represents all chains of length l """
     
-    def __init__(self, l, colors=2, fixed_length=True):
+    def __init__(self, l, colors=2, fixed_length=True, cyclic=False):
         self.l = l
         self.colors = colors
         self.fixed_length = fixed_length
+        self.cyclic = cyclic
         
         
     def __repr__(self):
@@ -204,13 +240,13 @@ class Chains(object):
             l = '%d' % self.l
         else:
             l = '1..%d' % self. l
-        return ('%s(l=%s, colors=%d)' %
-                (self.__class__.__name__, l, self.colors))
+        return ('%s(l=%s, colors=%d, cyclic=%s)' %
+                (self.__class__.__name__, l, self.colors, self.cyclic))
         
         
     @property
     def lengths(self):
-        """ returns iterator enumerating all possible block lengths """ 
+        """ returns iterator enumerating all possible block lengths """
         if self.fixed_length:
             return (self.l,)
         else:
@@ -224,11 +260,15 @@ class Chains(object):
             F. Ruskey, C. Savage, T. Min Yih Wang, J. of Algorithms, 13 (1992).
         """
         for l in self.lengths:
-            Nb = 0
-            for d in xrange(1, l + 1):
-                Nb += self.colors ** fractions.gcd(l, d)
-            Nb //= self.l
-            yield Nb            
+            if self.cyclic:
+                Nb = 0
+                for d in xrange(1, l + 1):
+                    Nb += self.colors ** fractions.gcd(l, d)
+                Nb //= self.l
+                yield Nb
+                
+            else:
+                yield self.colors ** l            
             
     
     def __len__(self):
@@ -251,21 +291,29 @@ class Chains(object):
             necklaces of beads in two colors, Discrete Math. 61 (1986), 181-188.
         """
         k = self.colors
-        a = np.zeros(l, np.int)
-        yield a
-        
-        i = l - 1
-        while True:
-            a[i] += 1
-            for j in xrange(l - i - 1):
-                a[j + i + 1] = a[j]
-            if l % (i + 1) == 0:
-                yield a
+        if self.cyclic:
+            # yield all cyclic chains (necklaces)
+            a = np.zeros(l, np.int)
+            yield a
+            
             i = l - 1
-            while a[i] == k - 1:
-                i -= 1
-                if i < 0:
-                    return
+            while True:
+                a[i] += 1
+                for j in xrange(l - i - 1):
+                    a[j + i + 1] = a[j]
+                if l % (i + 1) == 0:
+                    yield a
+                i = l - 1
+                while a[i] == k - 1:
+                    i -= 1
+                    if i < 0:
+                        return
+        
+        else:
+            # yield all linear chains
+            colors = range(k)
+            for a in itertools.product(colors, repeat=l):
+                yield np.array(a)
 
     
     def __iter__(self):
@@ -308,12 +356,13 @@ class ChainCollections(object):
     of length `l` """
     
     single_item_class = Chains 
-    
+    colors_str = 'heights'
+
      
-    def __init__(self, cnt, l, colors=2, fixed_length=True):
+    def __init__(self, cnt, l, colors=2, fixed_length=True, cyclic=False):
         self.cnt = cnt
         self.fixed_length = fixed_length
-        self.chains = self.single_item_class(l, colors, fixed_length)
+        self.chains = self.single_item_class(l, colors, fixed_length, cyclic)
         
         # currently used to generate random chains
         self.l = l
@@ -321,16 +370,25 @@ class ChainCollections(object):
         
         
     def __repr__(self):
+        return ('%s(cnt=%d, l=%d, %s=%d, fixed_length=%s, cyclic=%s)' %
+                (self.__class__.__name__, self.cnt, self.l, self.colors_str,
+                 self.colors, self.fixed_length, self.chains.cyclic))
+        
+        
+    def __str__(self):
         if self.fixed_length:
             l = '%d' % self.l
         else:
             l = '1..%d' % self. l
-        return ('%s(cnt=%d, l=%s, colors=%d)' %
-                (self.__class__.__name__, self.cnt, l, self.colors))
+        return ('%s(cnt=%d, l=%s, %s=%d, cyclic=%s)' %
+                (self.__class__.__name__, self.cnt, l, self.colors_str,
+                 self.colors, self.chains.cyclic))        
         
     
     def __len__(self):
-        """ returns the number of possible receptor combinations """
+        """ returns the number of possible receptor combinations.
+        The returned number is equal to len(list(self)), but is calculated more
+        efficiently. """
         num = len(self.chains)
         return comb(num, self.cnt, exact=True)
                
@@ -347,11 +405,6 @@ class ChainCollections(object):
                 yield chain_col
 
 
-    def get_zero_elements(self):
-        """ returns a list with chains of color 0 """
-        return np.zeros((self.cnt, self.l), np.int)
-
-
     def _choose_random_fixed_length(self, cnt, l):
         """ chooses `cnt` unique chains consisting of `l` blocks with
         `colors` unique colors """
@@ -366,9 +419,14 @@ class ChainCollections(object):
         while len(chains) < cnt:
             # choose a random substrate and determine its character
             s = np.random.randint(0, colors, size=l)
-            s2 = np.r_[s, s]
-            character = min(np.dot(s2[k:k + l], base)
-                            for k in xrange(l))
+            
+            if self.chains.cyclic:
+                s2 = np.r_[s, s]
+                character = min(np.dot(s2[k:k + l], base)
+                                for k in xrange(l))
+            else:
+                character = np.dot(s, base)
+                
             counter += 1
             # add the substrate if it is not already in the list
             if character not in characters:
@@ -457,6 +515,9 @@ class ChainsInteraction(object):
     @classmethod
     def create_test_instance(cls):
         """ creates a instance of the class with random parameters """
+        # TODO: allow receptors of unequal length
+        # TODO: think about cyclic cases
+        
         # choose random parameters
         colors = random.randint(4, 6)
         cnt_s = random.randint(10, 20)
@@ -476,6 +537,9 @@ class ChainsInteraction(object):
 
     def check_consistency(self):
         """ consistency check on the number of receptors and substrates """
+        # TODO: check the length of the receptors and whether they are cyclic
+        # or not
+        
         # check the supplied substrates
         unique_substrates = remove_redundant_chains(self.substrates)
         redundant_count = len(self.substrates) - len(unique_substrates)
@@ -520,7 +584,7 @@ class ChainsInteraction(object):
             return self._cache['substrates2']
     
     
-    def update_energies_receptor(self, idx_r=0):
+    def update_energies_receptor(self, idx_r):
         """ updates the energy of the `idx_r`-th receptor """
         receptor = self.receptors[idx_r]
         l_r = len(receptor)
@@ -698,7 +762,7 @@ class ChainsInteractionPossibilities(object):
         #    * taking advantage of partially calculated energies
         
         # create an initial state object
-        receptors = self.possible_receptors.get_zero_elements()
+        receptors = self.possible_receptors.choose_random()
         state = self.interaction_class(self.substrates_data, receptors,
                                        self.colors)
         
@@ -799,8 +863,10 @@ class ChainsInteractionPossibilities(object):
 
         # recalculate the interaction energies of the changed receptor
         state.update_energies_receptor(idx_r)
-        
-        # assert np.sum(np.abs(self.energies - self.update_energies())) == 0
+
+#         energies_copy = state.energies.copy()
+#         state.update_energies()
+#         assert np.allclose(state.energies, energies_copy)
             
     
     def estimate_computation_speed(self):
