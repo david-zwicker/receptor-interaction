@@ -63,6 +63,7 @@ class ReceptorOptimizerBruteForce(object):
         self.do_output(step, force_output=True)
         self.info['states_considered'] = step + 1 
         self.info['total_time'] = time.time() - self.start    
+        self.info['performance'] = (step + 1) / self.info['total_time']
         self.info['multiplicity'] = multiplicity
         return state_best, MI_best
 
@@ -105,6 +106,7 @@ class ReceptorOptimizerAnnealing(Annealer):
         state_best, energy_best = self.anneal()
         self.info['total_time'] = time.time() - self.start    
         self.info['states_considered'] = self.steps
+        self.info['performance'] = self.steps / self.info['total_time']
         
         return state_best, -energy_best
 
@@ -124,14 +126,14 @@ def ReceptorOptimizerAuto(state_collection, time_limit=1, verbose=True,
     if len(state_collection) < max_iter:
         # few steps => use brute force
         if verbose:
-            print('Brute force for %d items (%d items/sec).'
+            print('Brute force for %d items (est. %d items/sec)'
                   % (len(state_collection), 1/time_per_iter)) 
         optimizer = ReceptorOptimizerBruteForce(state_collection, output=output)
         
     else:
         # many steps => use simulated annealing
         if verbose:
-            print('Simulated annealing for %d items (%d items/sec).' 
+            print('Simulated annealing for %d items (est. %d items/sec)' 
                   % (len(state_collection), 1/time_per_iter)) 
 
         # create optimizer instance            

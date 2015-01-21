@@ -100,72 +100,46 @@ class Chain(np.ndarray):
         self[:] = self.normalized()
     
         
-    def get_mpl_collection_linear(self, width=np.pi, height=0.3, center=(0, 0),
-                                  cmap=None, **kwargs):
+    def get_mpl_collection(self, center=(0, 0), size=1, width=0.3, cmap=None,
+                           **kwargs):
         """ create a matplotlib patch collection visualizing the chain in a 
         linear way.
-            `width` is the total width of the chain
-            `height` is the associated height
+            `size` is the total size of the chain
+            `width` is the associated width
         """
-        from matplotlib.patches import Rectangle
+        from matplotlib.patches import Rectangle, Wedge
         from matplotlib.collections import PatchCollection
+        from matplotlib.colors import Normalize
         from matplotlib import cm
 
         if cmap is None:
             cmap = cm.jet
         
-        if not self.cyclic:        
-            raise RuntimeWarning('Creating cyclic representation of non-cyclic '
-                                 'chain.')
-            
-        # create the individual patches
-        sector = width / len(self)
-        patches = []
-        for k in xrange(len(self)):
-            x = center[0] - width/2 + k*sector
-            y = center[1] - height/2
-            patches.append(Rectangle((x, y), sector, height, **kwargs))
+        if self.cyclic:        
+            # create cyclic chain    
+            r_min, r_max = size - width, size
+            sector = 360 / len(self)
+            patches = []
+            for k in xrange(len(self)):
+                angle = k * sector
+                patches.append(Wedge(center, r_max, angle, angle + sector,
+                                     width=r_max - r_min, **kwargs))
+        else:            
+            # create linear chain
+            sector = size / len(self)
+            patches = []
+            for k in xrange(len(self)):
+                x = center[0] - size/2 + k*sector
+                y = center[1] - width/2
+                patches.append(Rectangle((x, y), sector, width, **kwargs))
             
         # combine the patches in a collection
-        pc = PatchCollection(patches, cmap=cmap)
+        pc = PatchCollection(patches, cmap=cmap,
+                             norm=Normalize(vmin=0, vmax=self.colors))
         pc.set_array(self)
         
         return pc
     
-        
-    def get_mpl_collection_cyclic(self, center=(0, 0), r_max=1, r_min=0.7,
-                                  cmap=None, **kwargs):
-        """ create a matplotlib patch collection visualizing the chain in a
-        circular fashion.
-            `center` denotes the center of the object
-            `r_max` is the outer radius of the highest block
-            `r_min` is the inner radius of all blocks
-        """
-        from matplotlib.patches import Wedge
-        from matplotlib.collections import PatchCollection
-        from matplotlib import cm
-
-        if cmap is None:
-            cmap = cm.jet
-        
-        if not self.cyclic:        
-            raise RuntimeWarning('Creating cyclic representation of non-cyclic '
-                                 'chain.')
-            
-        # create the individual patches
-        sector = 360 / len(self)
-        patches = []
-        for k in xrange(len(self)):
-            angle = k * sector
-            patches.append(Wedge(center, r_max, angle, angle + sector,
-                                 width=r_max - r_min, **kwargs))
-            
-        # combine the patches in a collection
-        pc = PatchCollection(patches, cmap=cmap)
-        pc.set_array(self)
-        
-        return pc
-
 
 
 def remove_redundant_chains(chains):
@@ -474,6 +448,9 @@ class ChainCollections(object):
 class ChainsInteraction(object):
     """ class that represents the interaction between a set of substrates and a
     set of receptors.
+    
+    This code currently assumes that the substrates are cyclic chains and that
+    the receptors are linear.
     """
     
     temperature = 1  #< temperature for equilibrium binding
@@ -482,7 +459,7 @@ class ChainsInteraction(object):
     item_collection_class = ChainCollections
 
     
-    def __init__(self, substrates, receptors, colors, interaction_range=None, 
+    def __init__(self, substrates, receptors, colors, interaction_range=1000, 
                  cache=None, energies=None):
         
         self.substrates = substrates
@@ -508,13 +485,13 @@ class ChainsInteraction(object):
     
         
     def __repr__(self):
-        return ('%s(substrates=%s, receptors=%s, %s=%d, interaction_range=%s)' %
+        return ('%s(substrates=%s, receptors=%s, %s=%d, interaction_range=%d)' %
                 (self.__class__.__name__, self.substrates, self.receptors,
                  self.colors_str, self.colors, self.interaction_range))
         
 
     def __str__(self):
-        return ('%s(%d Substrates, %d Receptors, %s=%d, interaction_range=%s)' %
+        return ('%s(%d Substrates, %d Receptors, %s=%d, interaction_range=%d)' %
                 (self.__class__.__name__, len(self.substrates),
                  len(self.receptors), self.colors_str, self.colors,
                  self.interaction_range))
@@ -523,21 +500,29 @@ class ChainsInteraction(object):
     @classmethod
     def create_test_instance(cls):
         """ creates a instance of the class with random parameters """
-        # TODO: allow receptors of unequal length
-        # TODO: think about cyclic cases
-        # TODO: think about varying the interaction range
+        coll_class = cls.item_collection_class
+
+        # choose general parameters
+        colors = random.randrange(2, 4)
+        interaction_range = random.randrange(5, 10)
+
+        # choose random substrates
+        cnt_s = random.randrange(10, 20)
+        l_s = random.randrange(10, 20)
+        substrates = coll_class(cnt_s, l_s, colors, cyclic=True).choose_random()
         
-        # choose random parameters
-        colors = random.randint(4, 6)
-        cnt_s = random.randint(10, 20)
-        l_s = random.randint(10, 20)
-        cnt_r = random.randint(10, 20)
-        l_r = random.randint(5, 10)
-        substrates = cls.item_collection_class(cnt_s, l_s, colors).choose_random()
-        receptors = cls.item_collection_class(cnt_r, l_r, colors).choose_random()
+        # choose random receptors
+        cnt_r = random.randrange(10, 20)
+        if random.randrange(0, 2):
+            # receptors have all the same length
+            l_r = random.randrange(5, 10)
+        else:
+            # receptors have varying length
+            l_r = sorted(np.random.randint(5, 11, 2))
+        receptors = coll_class(cnt_r, l_r, colors, cyclic=False).choose_random()
         
         # create object
-        obj = cls(substrates, receptors, colors)
+        obj = cls(substrates, receptors, colors, interaction_range)
         obj.temperature = np.random.randint(0, 3)
         obj.threshold = np.random.random()
         
@@ -600,32 +585,58 @@ class ChainsInteraction(object):
     def update_energies_receptor(self, idx_r):
         """ updates the energy of the `idx_r`-th receptor """
         receptor = self.receptors[idx_r]
-        l_r = len(receptor)
-        l_s = self.substrates2.shape[1] // 2 
-        self.energies[:, idx_r] = reduce(np.maximum, (
-            np.sum(self.substrates2[:, i:i+l_r] == receptor[np.newaxis, :],
-                   axis=1)
-            for i in xrange(l_s)
-        ))
+        l_s = self.substrates2.shape[1] // 2
+        l_r = len(receptor) 
+
+        if self.interaction_range < l_r:
+            # the substrates interact with part of the receptor
+            rng = self.interaction_range            
+            self.energies[:, idx_r] = reduce(np.maximum, (
+                np.sum(self.substrates2[:, i:i + rng] ==
+                        receptor[np.newaxis, j:j + rng],
+                       axis=1)
+                for i in xrange(l_s)           #< try all substrate translations
+                for j in xrange(l_r - rng + 1) #< try all receptor translations
+            ))
+
+        else:
+            # the substrates interact with the full receptor
+            self.energies[:, idx_r] = reduce(np.maximum, (
+                np.sum(self.substrates2[:, i:i+l_r] == receptor[np.newaxis, :],
+                       axis=1)
+                for i in xrange(l_s)       #< try all substrate translations
+            ))
         
                    
     def update_energies(self):
         """ calculates all the energies between the substrates and the
         receptors
-        FIXME: currently only substrates longer than the receptors are supported
         """
         if isinstance(self.receptors, np.ndarray):
             # efficient implementation for the case of equal receptor lengths
             l_s = self.substrates2.shape[1] // 2
-            l_r = self.receptors.shape[1]
-        
-            # calculate the energies with a sliding window
-            self.energies[:] = reduce(np.maximum, (
-                np.sum(self.substrates2[:, np.newaxis, i:i+l_r] ==
-                           self.receptors[np.newaxis, :, :],
-                       axis=2)
-                for i in xrange(l_s)
-            ))
+            l_r = self.receptors.shape[1] 
+    
+            if self.interaction_range < l_r:
+                # the substrates interact with part of the receptors
+                rng = self.interaction_range            
+                self.energies[:] = reduce(np.maximum, (
+                    np.sum(self.substrates2[:, np.newaxis, i:i + rng] ==
+                               self.receptors[np.newaxis, :, j:j + rng],
+                           axis=2)
+                    for i in xrange(l_s)           #< try all substrate trans.
+                    for j in xrange(l_r - rng + 1) #< try all receptor trans.
+                ))
+            
+                
+            else:
+                # the substrates interact with the full receptors
+                self.energies[:] = reduce(np.maximum, (
+                    np.sum(self.substrates2[:, np.newaxis, i:i + l_r] ==
+                               self.receptors[np.newaxis, :, :],
+                           axis=2)
+                    for i in xrange(l_s)       #< try all substrate translations
+                ))
             
         else:
             # general implementation for receptors of unequal lengths
@@ -744,9 +755,11 @@ class ChainsInteractionPossibilities(object):
     keep_length_factor = 5   
     
     
-    def __init__(self, substrates, possible_receptors):    
+    def __init__(self, substrates, possible_receptors,
+                 interaction_range='full'):    
         self.substrates = substrates
         self.possible_receptors = possible_receptors
+        self.interaction_range = interaction_range
         
         try:
             if self.substrates.fixed_length:
@@ -764,14 +777,23 @@ class ChainsInteractionPossibilities(object):
 
 
     def __repr__(self):
-        return ('%s(substrates=%s, receptors=%s)' %
+        return ('%s(substrates=%s, receptors=%s, interaction_range=%s)' %
                 (self.__class__.__name__, repr(self.substrates),
-                 repr(self.possible_receptors)))
+                 repr(self.possible_receptors), self.interaction_range))
         
         
     def __len__(self):
         return len(self.possible_receptors)
     
+    
+    @property
+    def _interaction_range_num(self):
+        """ returns a numeric value for the interaction range """
+        if self.interaction_range == 'full':
+            return 10000
+        else:
+            return self.interaction_range
+        
     
     def __iter__(self):
         """ generates all possible chain interactions """
@@ -781,7 +803,7 @@ class ChainsInteractionPossibilities(object):
         # create an initial state object
         receptors = self.possible_receptors.choose_random()
         state = self.interaction_class(self.substrates_data, receptors,
-                                       self.colors)
+                                       self.colors, self._interaction_range_num)
         
         # iterate over all receptors and update the state object
         for receptors in self.possible_receptors:
@@ -794,7 +816,7 @@ class ChainsInteractionPossibilities(object):
         """ returns a randomly chosen chain interaction """
         receptors = self.possible_receptors.choose_random()
         return self.interaction_class(self.substrates_data, receptors,
-                                      self.colors)
+                                      self.colors, self._interaction_range_num)
     
     
     @property
@@ -820,6 +842,8 @@ class ChainsInteractionPossibilities(object):
         try:
             return self._cache['length_change_rates']
         except KeyError:
+            # calculate the rates once and store them in the cache
+            
             rates = [(0, 1)] #< initialize for chains of zero length
             counts = list(self.possible_receptors.chains.counts)
             l_min = self.possible_receptors.l_min
@@ -852,21 +876,21 @@ class ChainsInteractionPossibilities(object):
     def _mutate_receptor_block(self, receptor, colors):
         """ mutates a single block in a receptor """
         # choose one point on one receptor that will be mutated        
-        block = random.randint(0, len(receptor) - 1)
+        block = random.randrange(0, len(receptor))
         if colors == 2:
             # restricted to two colors => flip color
             receptor[block] = 1 - receptor[block]
         else:
             # more than two colors => use random choice
             clrs = self.color_alternatives[receptor[block]]
-            idx = random.randint(0, colors - 2)
+            idx = random.randrange(0, colors - 1)
             receptor[block] = clrs[idx]
         
         
     def mutate_state(self, state):
         """ mutate a single, random receptor """
         # choose one receptor that will be mutated
-        idx_r = random.randint(0, len(state.receptors) - 1)
+        idx_r = random.randrange(0, len(state.receptors))
         receptor = state.receptors[idx_r]
         
         if self.possible_receptors.fixed_length:
@@ -883,7 +907,7 @@ class ChainsInteractionPossibilities(object):
                 state.receptors[idx_r] = receptor[:-1]
             elif rnd < rates[1]:
                 # increase the receptor length
-                block = random.randint(0, state.colors - 1)
+                block = random.randrange(0, state.colors)
                 state.receptors[idx_r] = np.r_[receptor[:-1], block]
             else:
                 # keep the receptor length unchanged

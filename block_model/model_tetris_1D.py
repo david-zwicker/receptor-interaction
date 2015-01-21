@@ -35,56 +35,29 @@ class Tetris(Chain):
         return ''.join(chars[f*h] for h in self)
 
 
-    def get_mpl_collection_linear(self, width=np.pi, height=0.5, center=(0, 0),
-                                  cmap=None, **kwargs):
-        """ create a matplotlib patch collection visualizing the tetris in a 
-        linear way.
-            `width` is the total width of the chain
-            `height` is the associated height
+    def get_mpl_collection(self, center=(0, 0), size=1, width=0.5, cmap=None,
+                           **kwargs):
+        """ create a matplotlib patch collection visualizing the tetris:
+        
+            `center` denotes the center of the object
+        For a linear chain, we have
+            `size` is the total length of the chain
+            `width` is the associated height
+        For a circular chain, we have
+            `size` is the outer radius of the highest block
+            `width` is the height of the highest block
         """
-        from matplotlib.patches import Rectangle
+        from matplotlib.patches import Rectangle, Wedge
         from matplotlib.collections import PatchCollection
+        from matplotlib.colors import Normalize
         from matplotlib import cm
 
         if cmap is None:
             cmap = cm.jet
         
-        if not self.cyclic:        
-            raise RuntimeWarning('Creating cyclic representation of non-cyclic '
-                                 'chain.')
-            
-        # create the individual patches
-        sector = width / len(self)
-        patches = []
-        for k, h in enumerate(self):
-            x = center[0] - width/2 + k*sector
-            y = center[1] - height/2
-            h = height * (h + 1)/(self.heights + 1)
-            patches.append(Rectangle((x, y), sector, height=h, **kwargs))
-            
-        # combine the patches in a collection
-        pc = PatchCollection(patches, cmap=cmap)
-        pc.set_array(self)
-        
-        return pc
-    
-        
-    def get_mpl_collection_cyclic(self, center=(0, 0), r_max=1, r_min=0.5, 
-                                  cmap=None, **kwargs):
-        """ create a matplotlib patch collection visualizing the tetris in a
-        circular fashion.
-            `center` denotes the center of the object
-            `r_max` is the outer radius of the highest block
-            `r_min` is the inner radius of all blocks
-        """
-        from matplotlib.patches import Wedge
-        from matplotlib.collections import PatchCollection
-        from matplotlib import cm
-        
-        if cmap is None:
-            cmap = cm.jet
-        
         if self.cyclic:
+            # create cyclic chain    
+            r_min, r_max = size - width, size
             # create the individual patches
             sector = 360 / len(self)
             patches = []
@@ -95,14 +68,27 @@ class Tetris(Chain):
                                      width=radius - r_min, **kwargs))
                 
             # combine the patches in a collection
-            pc = PatchCollection(patches, cmap=cmap)
+            pc = PatchCollection(patches, cmap=cmap,
+                                 norm=Normalize(vmin=0, vmax=self.heights))
             pc.set_array(self)
-            
-        else:
-            raise NotImplementedError
-            
-        return pc
 
+        else:
+            # create linear chain
+            sector = size / len(self)
+            patches = []
+            for k, h in enumerate(self):
+                x = center[0] - size/2 + k*sector
+                y = center[1] - width/2
+                h = width * (h + 1)/(self.heights + 1)
+                patches.append(Rectangle((x, y), sector, h, **kwargs))
+            
+        # combine the patches in a collection
+        pc = PatchCollection(patches, cmap=cmap,
+                             norm=Normalize(vmin=0, vmax=self.heights))
+        pc.set_array(self)
+        
+        return pc
+    
 
 
 class TetrisBlocks(Chains):
@@ -141,15 +127,19 @@ class TetrisCollections(ChainCollections):
 class TetrisInteraction(ChainsInteraction):
     """ class that represents the interaction between a set of substrates and a
     set of receptors built of tetris blocks.
+
+    This code currently assumes that the substrates are cyclic chains and that
+    the receptors are linear.
     """
 
     item_collection_class = TetrisCollections
 
     
-    def __init__(self, substrates, receptors, heights,
+    def __init__(self, substrates, receptors, heights, interaction_range=1000,
                  cache=None, energies=None):
         super(TetrisInteraction, self).__init__(substrates, receptors, heights,
-                                                cache, energies)
+                                                interaction_range, cache,
+                                                energies)
 
     @property
     def heights(self):
@@ -159,23 +149,43 @@ class TetrisInteraction(ChainsInteraction):
     def update_energies_receptor(self, idx_r):
         """ updates the energy of the `idx_r`-th receptor """
         receptor = self.receptors[idx_r]
-        l_s, l_r = self.substrates2.shape[1] // 2, len(receptor)
-        
-        # iterate over all translations of the receptor over the substrates
+        l_s = self.substrates2.shape[1] // 2
+        l_r = len(receptor) 
+
         energies = self.energies[:, idx_r]
         energies[:] = 0
-        for i in xrange(l_s):
-            # calculate the distance of all blocks
-            dist = self.substrates2[:, i:i+l_r] + receptor[np.newaxis, :]
-            # calculate the maximal distance for each substrate
-            dist_max = dist.max(axis=1)
-            
-            # calculate the number of contact points
-            Es = np.sum(dist == dist_max[:, np.newaxis], axis=1)
-            
-            # take the maximum with previously calculated energies
-            np.maximum(Es, energies, energies)
+
+        if self.interaction_range < l_r:
+            # the substrates interact with part of the receptor
+            rng = self.interaction_range            
+            for i in xrange(l_s): #< try all substrate translations
+                for j in xrange(l_r - rng + 1): #< try all receptor translations
+                    # calculate the distance of all blocks
+                    dist = (self.substrates2[:, i:i + rng]
+                            + receptor[np.newaxis, j:j + rng])
+                    # calculate the maximal distance for each substrate
+                    dist_max = dist.max(axis=1)
+                    
+                    # calculate the number of contact points
+                    Es = np.sum(dist == dist_max[:, np.newaxis], axis=1)
+                    
+                    # take the maximum with previously calculated energies
+                    np.maximum(Es, energies, energies)
                 
+        else:
+            # the substrates interact with the full receptor
+            for i in xrange(l_s): #< try all substrate translations
+                # calculate the distance of all blocks
+                dist = self.substrates2[:, i:i + l_r] + receptor[np.newaxis, :]
+                # calculate the maximal distance for each substrate
+                dist_max = dist.max(axis=1)
+                
+                # calculate the number of contact points
+                Es = np.sum(dist == dist_max[:, np.newaxis], axis=1)
+                
+                # take the maximum with previously calculated energies
+                np.maximum(Es, energies, energies)
+                    
        
     def update_energies(self):
         """ calculates all the energies between the substrates and the
@@ -197,9 +207,11 @@ class TetrisInteractionPossibilities(ChainsInteractionPossibilities):
     interaction_class = TetrisInteraction
     
     
-    def __init__(self, substrates, possible_receptors):      
+    def __init__(self, substrates, possible_receptors,
+                 interaction_range='full'):      
         super(TetrisInteractionPossibilities, self).__init__(substrates, 
-                                                             possible_receptors)
+                                                             possible_receptors,
+                                                             interaction_range)
 
     @property
     def heights(self):
