@@ -6,6 +6,8 @@ Created on Jan 21, 2015
 
 from __future__ import division
 
+import contextlib
+import sys
 import timeit
 from collections import Counter
 
@@ -59,3 +61,25 @@ class classproperty(object):
         
     def __get__(self, obj, owner):
         return self.f(owner)
+    
+    
+    
+class DummyFile(object):
+    """ dummy file that ignores all write calls """
+    def write(self, x):
+        pass
+
+
+
+@contextlib.contextmanager
+def silent_stdout():
+    """
+    context manager that silence the standard output
+    Code copied from http://stackoverflow.com/a/2829036/932593
+    """
+    save_stdout = sys.stdout
+    sys.stdout = DummyFile()
+    yield
+    sys.stdout = save_stdout
+    
+    

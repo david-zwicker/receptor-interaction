@@ -10,6 +10,7 @@ import time
 
 from simanneal import Annealer
 
+from .utils import silent_stdout
 
 
 class ReceptorOptimizerBruteForce(object):
@@ -141,7 +142,8 @@ def ReceptorOptimizerAuto(state_collection, time_limit=1, verbose=True,
         
         if parameter_estimation:
             # automatically estimate the parameters for the simulated annealing
-            schedule = optimizer.auto(time_limit/60)
+            with silent_stdout():
+                schedule = optimizer.auto(time_limit/60)
             optimizer.set_schedule(schedule)
             
             if output != 0:
