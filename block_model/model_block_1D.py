@@ -15,9 +15,6 @@ the first dimension corresponds to different chains.
     
 Special objects are used to represent the set of all unique chains and the
 interaction between sets of substrate and receptor chains.
-
-FIXME: receptors (or generally the smaller part in the interaction) are not
-allowed to be cyclic -- only the large part can be cyclic
 '''
 
 from __future__ import division
@@ -67,6 +64,15 @@ def get_fastest_entropy_function():
     return func_fastest
 
 calc_entropy = get_fastest_entropy_function()
+
+
+
+class classproperty(object):
+    def __init__(self, f):
+        self.f = f
+        
+    def __get__(self, obj, owner):
+        return self.f(owner)
 
 
 #===============================================================================
@@ -210,7 +216,7 @@ def normalize_chains(chains):
     """ picks the member of the equivalence class of necklaces that has the
     lowest character. """
     result = []
-    colors = chains.max()
+    colors = max(max(chain) for chain in chains)
     chains = sorted(chains, key=len)
     for _, group in itertools.groupby(chains, key=len):
         # handle all chains of a certain length
@@ -223,48 +229,50 @@ def normalize_chains(chains):
         result.extend(sublist)
     return result
 
-    
+
 
 class Chains(object):
     """ class that represents all chains of length l """
+
+    colors_str = 'heights'
     
-    def __init__(self, l, colors=2, fixed_length=True, cyclic=False):
-        self.l = l
+    def __init__(self, l, colors=2, cyclic=False):
+        try:
+            self.l_min, self.l_max = l
+        except TypeError:
+            self.l_min = self.l_max = l
         self.colors = colors
-        self.fixed_length = fixed_length
         self.cyclic = cyclic
+        
+        
+    @property
+    def fixed_length(self):
+        return self.l_min == self.l_max
         
         
     def __repr__(self):
         if self.fixed_length:
-            l = '%d' % self.l
+            ls = '%d' % self.l_min
         else:
-            l = '1..%d' % self. l
-        return ('%s(l=%s, colors=%d, cyclic=%s)' %
-                (self.__class__.__name__, l, self.colors, self.cyclic))
+            ls = '(%d, %d)' % (self.l_min, self.l_max)
+        return ('%s(l=%s, %s=%d, cyclic=%s)' %
+                (self.__class__.__name__, ls, self.colors_str, self.colors,
+                 self.cyclic))
         
         
-    @property
-    def lengths(self):
-        """ returns iterator enumerating all possible block lengths """
-        if self.fixed_length:
-            return (self.l,)
-        else:
-            return xrange(1, self.l + 1)
-            
-            
     @property
     def counts(self):
-        """ returns the number of unique chains of all possible lengths
+        """ returns the number of unique chains of all possible lengths from
+        l_min until l_max.
         The algorithm used here is based on Eq. 1 from the paper
             F. Ruskey, C. Savage, T. Min Yih Wang, J. of Algorithms, 13 (1992).
         """
-        for l in self.lengths:
+        for l in xrange(self.l_min, self.l_max + 1):
             if self.cyclic:
                 Nb = 0
                 for d in xrange(1, l + 1):
                     Nb += self.colors ** fractions.gcd(l, d)
-                Nb //= self.l
+                Nb //= l
                 yield Nb
                 
             else:
@@ -325,7 +333,7 @@ class Chains(object):
             list(self)
         to create a list of all chains.
         """
-        for l in self.lengths:
+        for l in xrange(self.l_min, self.l_max + 1):
             for chain in self._iterate_fixed_length(l):
                 yield chain
 
@@ -339,7 +347,7 @@ class Chains(object):
     def to_array(self):
         """ returns an array of all possible chains """
         if self.fixed_length:
-            res = np.zeros((len(self), self.l), np.int)
+            res = np.zeros((len(self), self.l_min), np.int)
             for k, c in enumerate(self):
                 res[k, :] = c
                 
@@ -356,35 +364,38 @@ class ChainCollections(object):
     of length `l` """
     
     single_item_class = Chains 
-    colors_str = 'heights'
 
      
-    def __init__(self, cnt, l, colors=2, fixed_length=True, cyclic=False):
+    def __init__(self, cnt, l, colors=2, cyclic=False):
         self.cnt = cnt
-        self.fixed_length = fixed_length
-        self.chains = self.single_item_class(l, colors, fixed_length, cyclic)
-        
-        # currently used to generate random chains
-        self.l = l
+        try:
+            self.l_min, self.l_max = l
+        except TypeError:
+            self.l_min = self.l_max = l
         self.colors = colors
+        self.chains = self.single_item_class(l, colors, cyclic)
         
+        
+    @property
+    def fixed_length(self):
+        return self.l_min == self.l_max
+        
+        
+    @classproperty
+    def colors_str(cls):  # @NoSelf
+        return cls.single_item_class.colors_str
+    
         
     def __repr__(self):
-        return ('%s(cnt=%d, l=%d, %s=%d, fixed_length=%s, cyclic=%s)' %
-                (self.__class__.__name__, self.cnt, self.l, self.colors_str,
-                 self.colors, self.fixed_length, self.chains.cyclic))
-        
-        
-    def __str__(self):
         if self.fixed_length:
-            l = '%d' % self.l
+            ls = '%d' % self.l_min
         else:
-            l = '1..%d' % self. l
+            ls = '(%d, %d)' % (self.l_min, self.l_max)
         return ('%s(cnt=%d, l=%s, %s=%d, cyclic=%s)' %
-                (self.__class__.__name__, self.cnt, l, self.colors_str,
-                 self.colors, self.chains.cyclic))        
-        
-    
+                (self.__class__.__name__, self.cnt, ls,
+                 self.colors_str, self.colors, self.chains.cyclic))
+          
+
     def __len__(self):
         """ returns the number of possible receptor combinations.
         The returned number is equal to len(list(self)), but is calculated more
@@ -444,7 +455,7 @@ class ChainCollections(object):
     def choose_random(self):
         """ chooses a random representation from the current collection """
         if self.fixed_length:
-            chains = self._choose_random_fixed_length(self.cnt, self.l)
+            chains = self._choose_random_fixed_length(self.cnt, self.l_min)
             chains = np.array(chains)
                     
         else:
@@ -453,8 +464,8 @@ class ChainCollections(object):
             lengths = Counter()
             for _ in xrange(self.cnt):
                 weights = np.array(counts) / np.sum(counts)
-                k = np.random.choice(self.l, p=weights)
-                lengths[k + 1] += 1
+                k = np.random.choice(len(counts), p=weights)
+                lengths[k + self.l_min] += 1
                 counts[k] -= 1
                 
             # choose chains according to this length distribution
@@ -499,17 +510,22 @@ class ChainsInteraction(object):
         else:
             self.energies = energies
 
+
+    @classproperty
+    def colors_str(cls):  # @NoSelf
+        return cls.item_collection_class.colors_str
+    
         
     def __repr__(self):
-        return ('%s(substrates=%s, receptors=%s, colors=%d)' %
+        return ('%s(substrates=%s, receptors=%s, %s=%d)' %
                 (self.__class__.__name__, self.substrates, self.receptors,
-                 self.colors))
+                 self.colors_str, self.colors))
         
 
     def __str__(self):
-        return ('%s(%d Substrates, %d Receptors, colors=%d)' %
+        return ('%s(%d Substrates, %d Receptors, %s=%d)' %
                 (self.__class__.__name__, len(self.substrates),
-                 len(self.receptors), self.colors))
+                 len(self.receptors), self.colors_str, self.colors))
         
 
     @classmethod
@@ -805,14 +821,23 @@ class ChainsInteractionPossibilities(object):
         except KeyError:
             rates = [(0, 1)] #< initialize for chains of zero length
             counts = list(self.possible_receptors.chains.counts)
-            max_l = self.possible_receptors.l
-            for k in xrange(max_l): # k == l - 1
+            l_min = self.possible_receptors.l_min
+            l_max = self.possible_receptors.l_max
+            for l in xrange(l_max + 1):
                 # count how many possible states there are
-                num_dec = 0 if k == 0 else counts[k - 1]
-                num_none = counts[k]
-                num_inc = 0 if k == max_l - 1 else counts[k + 1]
-                num_tot = num_dec + num_none + num_inc
+                if l >= l_min:
+                    k = l - l_min #< index into the counts array
+                    num_dec = 0 if l <= l_min else counts[k - 1]
+                    num_nochange = counts[k]
+                    num_inc = 0 if l >= l_max else counts[k + 1]
+                else:
+                    # this case should not happen, but we store it in the array
+                    # for convenience of later access
+                    num_dec = num_inc = 0
+                    num_nochange = 1
+                
                 # calculate the according rates
+                num_tot = num_dec + num_nochange + num_inc
                 rate_dec = num_dec/num_tot
                 rate_inc = num_inc/num_tot
                 rates.append((rate_dec, rate_dec + rate_inc))

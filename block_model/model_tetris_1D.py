@@ -72,17 +72,18 @@ class Tetris(Chain):
 
 class TetrisBlocks(Chains):
     """ class that represents all tetris blocks of length l """
-        
-    def __init__(self, l, heights=2, fixed_length=True, cyclic=False):
-        self.heights = heights
-        super(TetrisBlocks, self).__init__(l, heights, fixed_length, cyclic)
-        
-        
-    def __repr__(self):
-        return ('%s(l=%d, heights=%d, fixed_length=%s, cyclic=%s)' %
-                (self.__class__.__name__, self.l, self.heights,
-                 self.fixed_length, self.cyclic))
 
+    colors_str = 'heights'
+
+
+    def __init__(self, l, heights=2, cyclic=False):
+        super(TetrisBlocks, self).__init__(l, heights, cyclic)
+
+        
+    @property
+    def heights(self):
+        return self.colors        
+        
 
 
 class TetrisCollections(ChainCollections):
@@ -90,7 +91,11 @@ class TetrisCollections(ChainCollections):
     blocks of length `l` """
 
     single_item_class = TetrisBlocks
-    colors_str = 'heights'
+    
+    
+    def __init__(self, cnt, l, heights=2, cyclic=False):
+        super(TetrisCollections, self).__init__(cnt, l, heights, cyclic)
+    
     
     @property
     def heights(self):
@@ -103,27 +108,18 @@ class TetrisInteraction(ChainsInteraction):
     set of receptors built of tetris blocks.
     """
 
-    single_item_class = TetrisBlocks
+    item_collection_class = TetrisCollections
 
     
     def __init__(self, substrates, receptors, heights,
                  cache=None, energies=None):
-        self.heights = heights
         super(TetrisInteraction, self).__init__(substrates, receptors, heights,
                                                 cache, energies)
 
-        
-    def __repr__(self):
-        return ('%s(substrates=%s, receptors=%s, heights=%d)' %
-                (self.__class__.__name__, self.substrates, self.receptors,
-                 self.heights))
-        
+    @property
+    def heights(self):
+        return self.colors
 
-    def __str__(self):
-        return ('%s(%d Substrates, %d Receptors, heights=%d)' %
-                (self.__class__.__name__, len(self.substrates),
-                 len(self.receptors), self.heights))
-        
         
     def update_energies_receptor(self, idx_r):
         """ updates the energy of the `idx_r`-th receptor """
