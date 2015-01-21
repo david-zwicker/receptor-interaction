@@ -35,12 +35,47 @@ class Tetris(Chain):
         return ''.join(chars[f*h] for h in self)
 
 
-    def get_mpl_collection(self, center=(0, 0), r_max=1, r_min=0.5, 
-                           cmap=None, **kwargs):
-        """ create a matplotlib patch collection visualizing the chain
-        `center` denotes the center of the object
-        `r_max` is the outer radius of the highest block
-        `r_min` is the inner radius of all blocks
+    def get_mpl_collection_linear(self, width=np.pi, height=0.5, center=(0, 0),
+                                  cmap=None, **kwargs):
+        """ create a matplotlib patch collection visualizing the tetris in a 
+        linear way.
+            `width` is the total width of the chain
+            `height` is the associated height
+        """
+        from matplotlib.patches import Rectangle
+        from matplotlib.collections import PatchCollection
+        from matplotlib import cm
+
+        if cmap is None:
+            cmap = cm.jet
+        
+        if not self.cyclic:        
+            raise RuntimeWarning('Creating cyclic representation of non-cyclic '
+                                 'chain.')
+            
+        # create the individual patches
+        sector = width / len(self)
+        patches = []
+        for k, h in enumerate(self):
+            x = center[0] - width/2 + k*sector
+            y = center[1] - height/2
+            h = height * (h + 1)/(self.heights + 1)
+            patches.append(Rectangle((x, y), sector, height=h, **kwargs))
+            
+        # combine the patches in a collection
+        pc = PatchCollection(patches, cmap=cmap)
+        pc.set_array(self)
+        
+        return pc
+    
+        
+    def get_mpl_collection_cyclic(self, center=(0, 0), r_max=1, r_min=0.5, 
+                                  cmap=None, **kwargs):
+        """ create a matplotlib patch collection visualizing the tetris in a
+        circular fashion.
+            `center` denotes the center of the object
+            `r_max` is the outer radius of the highest block
+            `r_min` is the inner radius of all blocks
         """
         from matplotlib.patches import Wedge
         from matplotlib.collections import PatchCollection

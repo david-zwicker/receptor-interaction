@@ -100,12 +100,46 @@ class Chain(np.ndarray):
         self[:] = self.normalized()
     
         
-    def get_mpl_collection(self, center=(0, 0), r_max=1, r_min=0.7, cmap=None,
-                           **kwargs):
-        """ create a matplotlib patch collection visualizing the chain
-        `center` denotes the center of the object
-        `r_max` is the outer radius of the highest block
-        `r_min` is the inner radius of all blocks
+    def get_mpl_collection_linear(self, width=np.pi, height=0.3, center=(0, 0),
+                                  cmap=None, **kwargs):
+        """ create a matplotlib patch collection visualizing the chain in a 
+        linear way.
+            `width` is the total width of the chain
+            `height` is the associated height
+        """
+        from matplotlib.patches import Rectangle
+        from matplotlib.collections import PatchCollection
+        from matplotlib import cm
+
+        if cmap is None:
+            cmap = cm.jet
+        
+        if not self.cyclic:        
+            raise RuntimeWarning('Creating cyclic representation of non-cyclic '
+                                 'chain.')
+            
+        # create the individual patches
+        sector = width / len(self)
+        patches = []
+        for k in xrange(len(self)):
+            x = center[0] - width/2 + k*sector
+            y = center[1] - height/2
+            patches.append(Rectangle((x, y), sector, height, **kwargs))
+            
+        # combine the patches in a collection
+        pc = PatchCollection(patches, cmap=cmap)
+        pc.set_array(self)
+        
+        return pc
+    
+        
+    def get_mpl_collection_cyclic(self, center=(0, 0), r_max=1, r_min=0.7,
+                                  cmap=None, **kwargs):
+        """ create a matplotlib patch collection visualizing the chain in a
+        circular fashion.
+            `center` denotes the center of the object
+            `r_max` is the outer radius of the highest block
+            `r_min` is the inner radius of all blocks
         """
         from matplotlib.patches import Wedge
         from matplotlib.collections import PatchCollection
@@ -114,22 +148,21 @@ class Chain(np.ndarray):
         if cmap is None:
             cmap = cm.jet
         
-        if self.cyclic:        
+        if not self.cyclic:        
+            raise RuntimeWarning('Creating cyclic representation of non-cyclic '
+                                 'chain.')
             
-            # create the individual patches
-            sector = 360 / len(self)
-            patches = []
-            for k in xrange(len(self)):
-                angle = k * sector
-                patches.append(Wedge(center, r_max, angle, angle + sector,
-                                     width=r_max - r_min, **kwargs))
-                
-            # combine the patches in a collection
-            pc = PatchCollection(patches, cmap=cmap)
-            pc.set_array(self)
+        # create the individual patches
+        sector = 360 / len(self)
+        patches = []
+        for k in xrange(len(self)):
+            angle = k * sector
+            patches.append(Wedge(center, r_max, angle, angle + sector,
+                                 width=r_max - r_min, **kwargs))
             
-        else:
-            raise NotImplementedError
+        # combine the patches in a collection
+        pc = PatchCollection(patches, cmap=cmap)
+        pc.set_array(self)
         
         return pc
 
@@ -374,8 +407,6 @@ class ChainCollections(object):
     def _choose_random_fixed_length(self, cnt, l):
         """ chooses `cnt` unique chains consisting of `l` blocks with
         `colors` unique colors """
-        # TODO: ensure that the chains would also appear in the iteration
-        # => return the normalized version of a chain
         colors = self.colors
         
         base = colors ** np.arange(l)
@@ -404,6 +435,10 @@ class ChainCollections(object):
             if counter > 1000:
                 raise RuntimeError('Cannot find %d chains of length %d' % 
                                    (cnt, l))
+                
+        chains = normalize_chains(chains)
+        assert len(chains) == cnt
+                
         return chains
     
     
@@ -447,13 +482,14 @@ class ChainsInteraction(object):
     item_collection_class = ChainCollections
 
     
-    def __init__(self, substrates, receptors, colors,
+    def __init__(self, substrates, receptors, colors, interaction_range=None, 
                  cache=None, energies=None):
         
         self.substrates = substrates
         self.receptors = receptors
         self.colors = colors
-        
+        self.interaction_range = interaction_range
+
         if cache is None:
             self._cache = {}
         else:
@@ -472,15 +508,16 @@ class ChainsInteraction(object):
     
         
     def __repr__(self):
-        return ('%s(substrates=%s, receptors=%s, %s=%d)' %
+        return ('%s(substrates=%s, receptors=%s, %s=%d, interaction_range=%s)' %
                 (self.__class__.__name__, self.substrates, self.receptors,
-                 self.colors_str, self.colors))
+                 self.colors_str, self.colors, self.interaction_range))
         
 
     def __str__(self):
-        return ('%s(%d Substrates, %d Receptors, %s=%d)' %
+        return ('%s(%d Substrates, %d Receptors, %s=%d, interaction_range=%s)' %
                 (self.__class__.__name__, len(self.substrates),
-                 len(self.receptors), self.colors_str, self.colors))
+                 len(self.receptors), self.colors_str, self.colors,
+                 self.interaction_range))
         
 
     @classmethod
@@ -488,6 +525,7 @@ class ChainsInteraction(object):
         """ creates a instance of the class with random parameters """
         # TODO: allow receptors of unequal length
         # TODO: think about cyclic cases
+        # TODO: think about varying the interaction range
         
         # choose random parameters
         colors = random.randint(4, 6)
@@ -510,6 +548,9 @@ class ChainsInteraction(object):
         """ consistency check on the number of receptors and substrates """
         # TODO: check the length of the receptors and whether they are cyclic
         # or not
+        
+        if self.interaction_range is not None:
+            assert self.interaction_range <= self.substrates.shape[1]
         
         # check the supplied substrates
         unique_substrates = remove_redundant_chains(self.substrates)
@@ -541,6 +582,7 @@ class ChainsInteraction(object):
         else:
             receptors = self.receptors[:]
         return self.__class__(self.substrates, receptors, self.colors,
+                              self.interaction_range,
                               self._cache, self.energies.copy())
         
         
@@ -697,6 +739,10 @@ class ChainsInteractionPossibilities(object):
     
     interaction_class = ChainsInteraction
     
+    # factor determining how often the length of a receptor is kept versus
+    # changing its length:
+    keep_length_factor = 5   
+    
     
     def __init__(self, substrates, possible_receptors):    
         self.substrates = substrates
@@ -790,6 +836,8 @@ class ChainsInteractionPossibilities(object):
                     # for convenience of later access
                     num_dec = num_inc = 0
                     num_nochange = 1
+                
+                num_nochange *= self.keep_length_factor
                 
                 # calculate the according rates
                 num_tot = num_dec + num_nochange + num_inc
