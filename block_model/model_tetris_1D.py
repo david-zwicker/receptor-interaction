@@ -185,17 +185,6 @@ class TetrisInteraction(ChainsInteraction):
                 
                 # take the maximum with previously calculated energies
                 np.maximum(Es, energies, energies)
-                    
-       
-    def update_energies(self):
-        """ calculates all the energies between the substrates and the
-        receptors
-        """
-        # calculate the energies with a sliding window
-        for idx_r in xrange(len(self.receptors)):
-            self.update_energies_receptor(idx_r)
-
-        return self.energies        
         
         
         

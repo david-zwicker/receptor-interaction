@@ -632,36 +632,9 @@ class ChainsInteraction(object):
         """ calculates all the energies between the substrates and the
         receptors
         """
-        if isinstance(self.receptors, np.ndarray):
-            # efficient implementation for the case of equal receptor lengths
-            l_s = self.substrates2.shape[1] // 2
-            l_r = self.receptors.shape[1] 
-    
-            if self.interaction_range < l_r:
-                # the substrates interact with part of the receptors
-                rng = self.interaction_range            
-                self.energies[:] = reduce(np.maximum, (
-                    np.sum(self.substrates2[:, np.newaxis, i:i + rng] ==
-                               self.receptors[np.newaxis, :, j:j + rng],
-                           axis=2)
-                    for i in xrange(l_s)           #< try all substrate trans.
-                    for j in xrange(l_r - rng + 1) #< try all receptor trans.
-                ))
-            
-                
-            else:
-                # the substrates interact with the full receptors
-                self.energies[:] = reduce(np.maximum, (
-                    np.sum(self.substrates2[:, np.newaxis, i:i + l_r] ==
-                               self.receptors[np.newaxis, :, :],
-                           axis=2)
-                    for i in xrange(l_s)       #< try all substrate translations
-                ))
-            
-        else:
-            # general implementation for receptors of unequal lengths
-            for idx_r in xrange(len(self.receptors)):
-                self.update_energies_receptor(idx_r)
+        # general implementation for receptors of unequal lengths
+        for idx_r in xrange(len(self.receptors)):
+            self.update_energies_receptor(idx_r)
                 
                       
         
@@ -802,6 +775,22 @@ class ChainsInteractionPossibilities(object):
     def __len__(self):
         return len(self.possible_receptors)
     
+    
+    @property
+    def temperature(self):
+        return self.possible_receptors.temperature
+    @temperature.setter
+    def temperature(self, value):
+        self.possible_receptors.temperature = value
+    
+    
+    @property
+    def threshold(self):
+        return self.possible_receptors.threshold
+    @threshold.setter
+    def threshold(self, value):
+        self.possible_receptors.threshold = value
+
     
     @property
     def _interaction_range_num(self):

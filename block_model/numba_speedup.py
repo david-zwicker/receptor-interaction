@@ -66,55 +66,6 @@ def ChainsInteraction_update_energies_receptor(self, idx_r):
 
 
 @numba.jit(nopython=True)
-def ChainsInteraction_update_energies_numba(substrates2, receptors,
-                                            interaction_range, out):
-    """ calculates all the interaction energies between the substrates and
-    the receptors and stores them in `out` """
-    for idx_r in xrange(len(receptors)):
-        ChainsInteraction_update_energies_receptor_numba(
-            substrates2, receptors[idx_r, :], interaction_range,
-            out[:, idx_r]
-        )
-    return
-
-    cnt_s, l_s2 = substrates2.shape
-    l_s = l_s2 // 2
-    cnt_r, l_r = receptors.shape
-    # check all substrates versus all receptors
-    for s in xrange(cnt_s):
-        for r in xrange(cnt_r):
-            overlap_max = 0
-            # find the maximum over all starting positions
-            for start in xrange(l_s):
-                overlap = 0
-                # count overlap along receptor length
-                for k in xrange(l_r):
-                    if substrates2[s, start + k] == receptors[r, k]:
-                        overlap += 1
-                overlap_max = max(overlap_max, overlap)
-            out[s, r] = overlap_max
-
-
-def ChainsInteraction_update_energies(self):
-    """ calculates all the energies between the substrates and the receptors """
-#     if isinstance(self.receptors, np.ndarray):
-#         # all receptors have the same length
-#         ChainsInteraction_update_energies_numba(
-#             self.substrates2, self.receptors, self.interaction_range,
-#             self.energies
-#         )
-#         
-#     else:
-    # receptor length varies
-    for idx_r, receptor in enumerate(self.receptors):
-        ChainsInteraction_update_energies_receptor_numba(
-            self.substrates2, receptor, self.interaction_range,
-            self.energies[:, idx_r]
-        )    
-
-
-
-@numba.jit(nopython=True)
 def ChainsInteraction_get_output_vector_numba(energies, temperature, threshold,
                                               out):
     """ calculate output vector for given receptors """
@@ -230,7 +181,7 @@ def TetrisInteraction_update_energies_receptor_numba(substrates2, receptor,
         for s in xrange(cnt_s): #< calculate for all substrates
             overlap_max = -1
             for i in xrange(l_s): #< try all substrate translations
-                for j in xrange(l_r - rng  + 1): #< try all receptor trans.
+                for j in xrange(l_r - rng  + 1): #< try all receptor translat.
                     overlap = 0
                     dist_max = -1
                     # calculate how often the maximal distance occurs
@@ -277,7 +228,7 @@ def TetrisInteraction_update_energies_receptor(self, idx_r):
         self.substrates2, self.receptors[idx_r], self.interaction_range,
         self.energies[:, idx_r]
     )
-        
+
 
 
 def check_energies(obj, (func1, func2)):
@@ -306,11 +257,6 @@ class NumbaPatcher(object):
             model_block_1D.ChainsInteraction.update_energies_receptor,
             ChainsInteraction_update_energies_receptor,
             check_energies, {'idx_r': 0}
-        ),
-        'model_block_1D.ChainsInteraction.update_energies': (
-            model_block_1D.ChainsInteraction.update_energies,
-            ChainsInteraction_update_energies,
-            check_energies, {}
         ),
         'model_block_1D.ChainsInteraction.get_mutual_information': (
             model_block_1D.ChainsInteraction.get_mutual_information,
@@ -400,7 +346,7 @@ class NumbaPatcher(object):
             
             
     @classmethod
-    def test_speedup(cls, repeat=10000):
+    def test_speedup(cls, test_duration=1):
         """ tests the speed up of the supplied methods """
         for name, funcs in cls.numba_methods.iteritems():
             # extract the class and the functions
@@ -411,9 +357,12 @@ class NumbaPatcher(object):
             func2 = functools.partial(funcs[1], **funcs[3])
             
             # check the runtime of the original implementation
-            speed1 = estimate_computation_speed(func1, test_obj)
+            speed1 = estimate_computation_speed(func1, test_obj,
+                                                test_duration=test_duration)
             # check the runtime of the improved implementation
-            speed2 = estimate_computation_speed(func2, test_obj)
+            speed2 = estimate_computation_speed(func2, test_obj,
+                                                test_duration=test_duration)
             
-            print('%s.%s: %g times' % (class_name, func_name, speed2/speed1))
+            print('%s.%s: %g times faster' 
+                  % (class_name, func_name, speed2/speed1))
             
