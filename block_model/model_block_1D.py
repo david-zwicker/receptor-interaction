@@ -196,7 +196,7 @@ def normalize_chains(chains):
 class Chains(object):
     """ class that represents all chains of length l """
 
-    colors_str = 'heights'
+    colors_str = 'colors'
     
     def __init__(self, l, colors=2, cyclic=False):
         try:
@@ -844,7 +844,7 @@ class ChainsInteractionPossibilities(object):
         except KeyError:
             # calculate the rates once and store them in the cache
             
-            rates = [(0, 1)] #< initialize for chains of zero length
+            rates = [] #< initialize for chains of zero length
             counts = list(self.possible_receptors.chains.counts)
             l_min = self.possible_receptors.l_min
             l_max = self.possible_receptors.l_max
@@ -858,8 +858,8 @@ class ChainsInteractionPossibilities(object):
                 else:
                     # this case should not happen, but we store it in the array
                     # for convenience of later access
-                    num_dec = num_inc = 0
-                    num_nochange = 1
+                    num_dec = num_nochange = 0
+                    num_inc = 1                    
                 
                 num_nochange *= self.keep_length_factor
                 

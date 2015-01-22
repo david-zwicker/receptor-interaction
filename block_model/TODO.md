@@ -1,8 +1,11 @@
-* Classes necessary:
+* Classes that are implemented:
     - single blocks
-    - given list of blocks
-    - all possible blocks
+    - given list of blocks (this can be implemented by a list of the previous class)
+    - all possible blocks of certain kind (same length, possible colors, etc.)
     - all possible combinations of a number of blocks
-    - interaction between two blocks
-    - interaction between two list of blocks
-    - interaction between a list of blocks and all possible blocks
+    - interaction between two blocks (this is a special case of the next class)
+    - interaction between two sets of blocks
+    - interaction between a list of substrate and all possible receptors
+ * Things to implement
+    - 2D carpets as a generalization of chains
+    - other experiments (detecting a mixture of substrates)
