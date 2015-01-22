@@ -7,12 +7,35 @@ Created on Jan 21, 2015
 from __future__ import division
 
 import contextlib
+import functools
 import sys
 import timeit
 from collections import Counter
 
 import numpy as np
 from scipy.stats import itemfreq
+
+
+
+def estimate_computation_speed(func, *args, **kwargs):
+    """ estimates the computation speed of a function """
+    test_duration = kwargs.pop('test_duration', 1)
+    
+    # prepare the function
+    if args or kwargs:
+        test_func = functools.partial(func, *args, **kwargs)
+    else:
+        test_func = func
+    
+    # call function once to allow caches be filled
+    test_func()    
+     
+    # call the function until the total time is achieved
+    number, duration = 1, 0
+    while duration < 0.1*test_duration:
+        number *= 10
+        duration = timeit.timeit(test_func, number=number)
+    return number/duration
 
 
 
@@ -34,17 +57,16 @@ def get_fastest_entropy_function():
                    for val in Counter(arr).itervalues())
 
     test_array = np.random.random_integers(0, 10, 100)
-    func_fastest, dur_fastest = None, np.inf
+    func_fastest, speed_max = None, 0
     for test_func in (entropy_numpy, entropy_scipy, entropy_counter):
         try:
-            test_func(test_array)
-            dur = timeit.timeit(lambda: test_func(test_array), number=10000)
+            speed = estimate_computation_speed(test_func, test_array)
         except TypeError:
             # older numpy versions don't support `return_counts`
             pass
         else:
-            if dur < dur_fastest:
-                func_fastest, dur_fastest = test_func, dur
+            if speed > speed_max:
+                func_fastest, speed_max = test_func, speed
 
     return func_fastest
 

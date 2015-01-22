@@ -23,12 +23,11 @@ import fractions
 import itertools
 import random
 import numpy as np
-import timeit
 
 from collections import Counter
 from scipy.misc import comb
 
-from .utils import calc_entropy, classproperty
+from .utils import calc_entropy, classproperty, estimate_computation_speed
 
 #===============================================================================
 # BASIC CHAIN/NECKLACE FUNCTIONS
@@ -923,20 +922,9 @@ class ChainsInteractionPossibilities(object):
         """ estimate the speed of the computation of a single iteration """
         # define test state and test function
         state = self.get_random_state()
-        def func():
+        def one_computation_step():
             """ test function for estimating the speed """
             state.update_energies()
             state.get_mutual_information()
             
-        # call the function once to make sure that just in time compilation is
-        # done before the timing
-        func()
-        
-        # try different repetitions until the total run time is about 1 sec 
-        number, duration = 1, 0
-        while duration < 0.1:
-            number *= 10
-            duration = timeit.timeit(func, number=number)
-            
-        return duration/number
-    
+        return estimate_computation_speed(one_computation_step)

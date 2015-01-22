@@ -13,11 +13,11 @@ import copy
 import functools
 import numba
 import numpy as np
-import timeit
 
 import model_block_1D
 import model_tetris_1D
-from model_block_1D import calc_entropy  # @UnusedImport
+from .model_block_1D import calc_entropy  # @UnusedImport
+from .utils import estimate_computation_speed
 
 
 
@@ -391,14 +391,10 @@ class NumbaPatcher(object):
             func1 = functools.partial(funcs[0], **funcs[3])
             func2 = functools.partial(funcs[1], **funcs[3])
             
-            # initialize possible caches
-            func1(test_obj)
-            func2(test_obj)
-            
             # check the runtime of the original implementation
-            dur1 = timeit.timeit(lambda: func1(test_obj), number=repeat)
+            speed1 = estimate_computation_speed(func1, test_obj)
             # check the runtime of the improved implementation
-            dur2 = timeit.timeit(lambda: func2(test_obj), number=repeat)
+            speed2 = estimate_computation_speed(func2, test_obj)
             
-            print('%s.%s: %g times' % (class_name, func_name, dur1/dur2))
+            print('%s.%s: %g times' % (class_name, func_name, speed2/speed1))
             

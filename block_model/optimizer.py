@@ -120,22 +120,22 @@ def ReceptorOptimizerAuto(state_collection, time_limit=1, verbose=True,
     that is supplied. The `time_limit` should be given in seconds.
     """
     # estimate how many iterations we can do per second 
-    time_per_iter = state_collection.estimate_computation_speed()
-    max_iter = time_limit/time_per_iter
+    items_per_sec = state_collection.estimate_computation_speed()
+    max_iter = items_per_sec*time_limit
 
     # determine which optimizer to use based on time constraints    
     if len(state_collection) < max_iter:
         # few steps => use brute force
         if verbose:
             print('Brute force for %d items (est. %d items/sec)'
-                  % (len(state_collection), 1/time_per_iter)) 
+                  % (len(state_collection), items_per_sec)) 
         optimizer = ReceptorOptimizerBruteForce(state_collection, output=output)
         
     else:
         # many steps => use simulated annealing
         if verbose:
             print('Simulated annealing for %d items (est. %d items/sec)' 
-                  % (len(state_collection), 1/time_per_iter)) 
+                  % (len(state_collection), items_per_sec)) 
 
         # create optimizer instance            
         optimizer = ReceptorOptimizerAnnealing(state_collection)
