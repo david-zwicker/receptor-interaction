@@ -873,18 +873,17 @@ class ChainsInteractionPossibilities(object):
             return self._cache['length_change_rates']
                 
         
-    def _mutate_receptor_block(self, receptor, colors):
-        """ mutates a single block in a receptor """
-        # choose one point on one receptor that will be mutated        
-        block = random.randrange(0, len(receptor))
+    def _mutate_random_block(self, chain, colors):
+        """ mutates a single block in a chain """
+        # choose one point on the chain that will be mutated        
+        block = random.randrange(0, len(chain))
         if colors == 2:
             # restricted to two colors => flip color
-            receptor[block] = 1 - receptor[block]
+            chain[block] = 1 - chain[block]
         else:
             # more than two colors => use random choice
-            clrs = self.color_alternatives[receptor[block]]
-            idx = random.randrange(0, colors - 1)
-            receptor[block] = clrs[idx]
+            clrs = self.color_alternatives[chain[block]]
+            chain[block] = clrs[random.randrange(0, colors - 1)]
         
         
     def mutate_state(self, state):
@@ -895,11 +894,10 @@ class ChainsInteractionPossibilities(object):
         
         if self.possible_receptors.fixed_length:
             # mutate one block of the chosen receptor
-            self._mutate_receptor_block(receptor, state.colors)
+            self._mutate_random_block(receptor, state.colors)
             
         else:
-            # change the receptor length of mutate one block
-            # choose a new length for the receptor
+            # change the receptor length or mutate one block
             rates = self.length_change_rates[len(receptor)]
             rnd = random.random()
             if rnd < rates[0]:
@@ -908,10 +906,10 @@ class ChainsInteractionPossibilities(object):
             elif rnd < rates[1]:
                 # increase the receptor length
                 block = random.randrange(0, state.colors)
-                state.receptors[idx_r] = np.r_[receptor[:-1], block]
+                state.receptors[idx_r] = np.r_[receptor, block]
             else:
                 # keep the receptor length unchanged
-                self._mutate_receptor_block(receptor, state.colors)
+                self._mutate_random_block(receptor, state.colors)
 
         # recalculate the interaction energies of the changed receptor
         state.update_energies_receptor(idx_r)
