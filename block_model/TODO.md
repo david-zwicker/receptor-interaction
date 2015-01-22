@@ -1,8 +1,8 @@
 * Classes that are implemented:
     - single blocks
-    - given list of blocks (this can be implemented by a list of the previous class)
+    - given list of blocks (this is just a list of instances of the previous class)
     - all possible blocks of certain kind (same length, possible colors, etc.)
-    - all possible combinations of a number of blocks
+    - all possible collections of a fixed number of blocks
     - interaction between two blocks (this is a special case of the next class)
     - interaction between two sets of blocks
     - interaction between a list of substrate and all possible receptors

@@ -321,22 +321,16 @@ class Chains(object):
     def to_list(self):
         """ returns an array of all unique chains of length `l` with `colors`
         possible colors per chain """
-        return [v.copy() for v in self]
-    
-    
-    def to_array(self):
-        """ returns an array of all possible chains """
         if self.fixed_length:
+            # represent all chains of a fixed length as a single numpy array
             res = np.zeros((len(self), self.l_min), np.int)
             for k, c in enumerate(self):
                 res[k, :] = c
+            return res
                 
         else:
-            raise RuntimeError('Cannot represent chains of variable length as '
-                               'a single array.')
-                
-        return res
-
+            return [v.copy() for v in self]
+    
 
 
 class ChainCollections(object):
@@ -347,13 +341,18 @@ class ChainCollections(object):
 
      
     def __init__(self, cnt, l, colors=2, cyclic=False):
-        self.cnt = cnt
+        # initialize the set of all chains
         try:
             self.l_min, self.l_max = l
         except TypeError:
             self.l_min = self.l_max = l
         self.colors = colors
         self.chains = self.single_item_class(l, colors, cyclic)
+        
+        if cnt == 'all':
+            self.cnt = len(self.chains) 
+        else:
+            self.cnt = cnt
         
         
     @property
@@ -436,7 +435,10 @@ class ChainCollections(object):
     
     def choose_random(self):
         """ chooses a random representation from the current collection """
-        if self.fixed_length:
+        if self.cnt == len(self.chains):
+            chains = self.chains.to_list()
+        
+        elif self.fixed_length:
             chains = self._choose_random_fixed_length(self.cnt, self.l_min)
             chains = np.array(chains)
                     
@@ -780,10 +782,7 @@ class ChainsInteractionPossibilities(object):
         self.interaction_range = interaction_range
         
         try:
-            if self.substrates.fixed_length:
-                self.substrates_data = substrates.to_array()
-            else:
-                self.substrates_data = substrates.to_list()
+            self.substrates_data = substrates.to_list()
         except AttributeError:
             self.substrates_data = substrates
             
@@ -795,9 +794,9 @@ class ChainsInteractionPossibilities(object):
 
 
     def __repr__(self):
-        return ('%s(substrates=%s, receptors=%s, interaction_range=%s)' %
-                (self.__class__.__name__, repr(self.substrates),
-                 repr(self.possible_receptors), self.interaction_range))
+        return ('%s(substrates=%r, receptors=%r, interaction_range=%r)' %
+                (self.__class__.__name__, self.substrates,
+                 self.possible_receptors, self.interaction_range))
         
         
     def __len__(self):
