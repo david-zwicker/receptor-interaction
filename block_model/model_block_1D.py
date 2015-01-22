@@ -35,9 +35,16 @@ from .utils import calc_entropy, classproperty, estimate_computation_speed
 
 
 class Chain(np.ndarray):
-    """ class representing a single chain """
+    """
+    class representing a single chain
+    """
     
     def __new__(cls, input_array, colors=None, cyclic=False):
+        """ 
+        Creates the array and adds additional information
+        note that `input_array` is not copied, but the data is used directly
+        if `input_array` is already an numpy array
+        """
         # Input array is an already formed ndarray instance
         # We first cast to be our class type
         obj = np.asarray(input_array).view(cls)
@@ -60,9 +67,9 @@ class Chain(np.ndarray):
         
     
     def __str__(self):
-        return ('%s(%s, cyclic=%s)' %
-                (self.__class__.__name__, super(Chain, self).__str__(),
-                 self.cyclic))
+        return ('%s(%s, colors=%d, cyclic=%s)' %
+                (self.__class__.__name__, np.ndarray.__str__(self),
+                 self.colors, self.cyclic))
 
 
     @property
@@ -96,7 +103,8 @@ class Chain(np.ndarray):
     def normalize(self):
         """ changes the current chain to the member of the equivalence class of
         necklaces that has the lowest character """
-        self[:] = self.normalized()
+        if self.cyclic:
+            self[:] = self.normalized()
     
         
     def get_mpl_collection(self, center=(0, 0), size=1, width=0.3, cmap=None,
@@ -175,19 +183,30 @@ def remove_redundant_chains(chains):
 
 def normalize_chains(chains):
     """ picks the member of the equivalence class of necklaces that has the
-    lowest character. """
+    lowest character and sorts the entire list of chains"""
     result = []
-    colors = max(max(chain) for chain in chains)
-    chains = sorted(chains, key=len)
+    colors = max(max(chain) for chain in chains) + 1
+    
+    if isinstance(chains, np.ndarray):
+        # copy data to not alter it in-place
+        chains = chains.copy()
+    else:
+        # sort chains by length first
+        chains = sorted(chains, key=len)
+        
     for _, group in itertools.groupby(chains, key=len):
         # handle all chains of a certain length
         sublist = []
+        # normalize all chains in this group
         for chain in group:
-            chain = Chain(chain, colors=colors)
-            chain.normalize()
+            chain = Chain(chain, colors=colors, cyclic=True)
+            chain.normalize() #< normalize this chain
             sublist.append(chain)
+            
+        # sort the chains within this group according to their character
         sublist.sort(key=lambda c: c.character)
         result.extend(sublist)
+        
     return result
 
 
