@@ -116,7 +116,7 @@ def ChainsInteraction_update_energies(self):
 
 @numba.jit(nopython=True)
 def ChainsInteraction_get_output_vector_numba(energies, temperature, threshold,
-                                              out, probabilities):
+                                              out):
     """ calculate output vector for given receptors """
     cnt_s, cnt_r = energies.shape
     threshold /= cnt_r #< normalize threshold to number of receptors
@@ -124,36 +124,51 @@ def ChainsInteraction_get_output_vector_numba(energies, temperature, threshold,
     # iterate over all substrates
     for s in xrange(cnt_s):
         if temperature == 0:
-            # determine minimal energies for each substrate
-            Emin = 1000
+            # only the receptors with maximal interaction energy contribute
+            
+            # determine maximal energies for each substrate and count how many
+            # receptors have this maximal energy
+            Emax = 0
+            count = 0
             for r in xrange(cnt_r):
-                Emin = min(Emin, energies[s, r])
-                
-            # determine the receptors that are activated
-            normalization = 0
-            for r in xrange(cnt_r):
-                if energies[s, r] == Emin:
-                    probabilities[r] = 1
-                    normalization += 1
-                else:
-                    probabilities[r] = 0
+                if energies[s, r] == Emax:
+                    count += 1
+                elif energies[s, r] > Emax:
+                    count = 1
+                    Emax = energies[s, r]
+            
+            # encode output in single integer
+            output = 0
+            if 1 >= threshold*count:
+                # there are few enough active receptors such that they get above
+                # threshold
+                base = 1
+                for r in xrange(cnt_r):
+                    # only consider receptors that have the maximal energy 
+                    if energies[s, r] == Emax:
+                        output += base
+                    base *= 2
+            out[s] = output
             
         else:
-            # calculate interaction probabilities
-            normalization = 0
-            for r in xrange(cnt_r):
-                probabilities[r] = np.exp(energies[s, r]/temperature)
-                normalization += probabilities[r]
+            # receptors contribute according to Boltzmann weights
             
-        # encode output in single integer
-        output = 0
-        base = 1
-        for r in xrange(cnt_r):
-            # only consider receptors above the threshold
-            if probabilities[r] > threshold*normalization:
-                output += base
-            base *= 2
-        out[s] = output
+            # calculate the total interaction probabilities for normalization
+            total = 0
+            for r in xrange(cnt_r):
+                total += np.exp(energies[s, r]/temperature)
+            
+            # encode output in single integer
+            output = 0
+            base = 1
+            Ethresh = temperature * np.log(threshold * total)
+            for r in xrange(cnt_r):
+                # only consider receptors above the threshold; test for
+                #     np.exp(energies[s, r]/temperature)/total >= threshold
+                if energies[s, r] >= Ethresh:
+                    output += base
+                base *= 2
+            out[s] = output
 
 
 @numba.jit(nopython=True)
@@ -181,15 +196,19 @@ def ChainsInteraction_get_mutual_information_numba(output_vector):
     
 def ChainsInteraction_get_mutual_information(self):
     """ calculate output vector for given receptors """
-    # calculate the resulting binding characteristics
-    cnt_s, cnt_r = self.energies.shape
-    output_vector = np.empty(cnt_s, np.int)
-    tmp = np.empty(cnt_r, np.double)
+    # create or load a temporary array to store the output vector into
+    cnt_s = len(self.energies)
+    try:
+        output_vector = ChainsInteraction_get_mutual_information.cache[:cnt_s]
+        if len(output_vector) < cnt_s:
+            raise AttributeError #< to fall into exception branch
+    except AttributeError:
+        ChainsInteraction_get_mutual_information.cache = np.empty(cnt_s, np.int)
+        output_vector = ChainsInteraction_get_mutual_information.cache
     
     # calculate the output vector
     ChainsInteraction_get_output_vector_numba(self.energies, self.temperature,
-                                              self.threshold, output_vector,
-                                              tmp)
+                                              self.threshold, output_vector)
     # calculate the mutual information
     output_vector.sort()
     return ChainsInteraction_get_mutual_information_numba(output_vector)

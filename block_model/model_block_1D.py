@@ -687,10 +687,10 @@ class ChainsInteraction(object):
         realizations.
         """
         if self.temperature == 0:
-            # determine minimal energies for each substrate
-            Emin = self.energies.min(axis=1)
+            # determine maximal energies for each substrate
+            Emax = self.energies.max(axis=1)
             # determine the receptors that are activated
-            probs = (self.energies == Emin[:, np.newaxis]).astype(np.double)
+            probs = (self.energies == Emax[:, np.newaxis]).astype(np.double)
             
         else:
             # calculate interaction probabilities
@@ -832,8 +832,12 @@ class ChainsInteractionPossibilities(object):
     def get_random_state(self):
         """ returns a randomly chosen chain interaction """
         receptors = self.possible_receptors.choose_random()
-        return self.interaction_class(self.substrates_data, receptors,
-                                      self.colors, self._interaction_range_num)
+        obj = self.interaction_class(self.substrates_data, receptors,
+                                     self.colors, self._interaction_range_num)
+        # choose random parameters
+        obj.temperature = random.randrange(0, 3)
+        obj.threshold = random.random() + 0.5
+        return obj
     
     
     @property
