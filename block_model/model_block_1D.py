@@ -778,18 +778,22 @@ class ChainsInteractionPossibilities(object):
     
     @property
     def temperature(self):
-        return self.possible_receptors.temperature
+        """ helper property for setting the temperature of the underlying
+        interaction class """
+        return self.interaction_class.temperature
     @temperature.setter
     def temperature(self, value):
-        self.possible_receptors.temperature = value
+        self.interaction_class.temperature = value
     
     
     @property
     def threshold(self):
-        return self.possible_receptors.threshold
+        """ helper property for setting the threshold of the underlying
+        interaction class """
+        return self.interaction_class.threshold
     @threshold.setter
     def threshold(self, value):
-        self.possible_receptors.threshold = value
+        self.interaction_class.threshold = value
 
     
     @property
