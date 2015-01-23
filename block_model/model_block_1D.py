@@ -695,19 +695,16 @@ class ChainsModel(object):
         state_parameters = {'colors': possible_receptors.colors,
                             'cross_talk': 0,
                             'interaction_range': 'full'}
-        state_parameters.update(kwargs.pop('state_parameters'), {})
+        state_parameters.update(kwargs.pop('state_parameters', {}))
         if 'cross_talk' in kwargs:
             state_parameters['cross_talk'] = kwargs.pop('cross_talk')
         if 'interaction_range' in kwargs:
-            state_parameters['cross_talk'] = kwargs.pop('cross_talk')
-            interaction_range = kwargs.pop('interaction_range')
+            state_parameters['interaction_range'] = kwargs.pop('interaction_range')
             
         if state_parameters['interaction_range'] == 'full':
             l_s = self.substrates_data.shape[1]
             l_r = self.possible_receptors.l_max
             state_parameters['interaction_range'] = max(l_s, l_r)
-        else:  
-            state_parameters['interaction_range'] = interaction_range
             
         if kwargs:
             raise TypeError('The following keyword parameters were not used: %s'
