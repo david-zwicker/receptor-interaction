@@ -34,7 +34,7 @@ def optimize_receptors(parameters):
         'experiment': DetectSingleSubstrate,
     
         'temperature': 1.,
-        'threshold': 0.,
+        'threshold': 1.,
         
         # optimization parameters
         'time_limit': 1, #< in minutes

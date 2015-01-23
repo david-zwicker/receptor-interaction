@@ -699,7 +699,8 @@ class ChainsModel(object):
         if 'cross_talk' in kwargs:
             state_parameters['cross_talk'] = kwargs.pop('cross_talk')
         if 'interaction_range' in kwargs:
-            state_parameters['interaction_range'] = kwargs.pop('interaction_range')
+            state_parameters['interaction_range'] = \
+                                                kwargs.pop('interaction_range')
             
         if state_parameters['interaction_range'] == 'full':
             l_s = self.substrates_data.shape[1]
@@ -850,10 +851,6 @@ class ChainsModel(object):
 
         # recalculate the interaction energies of the changed receptor
         state.update_energies_receptor(idx_r)
-
-#         energies_copy = state.energies.copy()
-#         state.update_energies()
-#         assert np.allclose(state.energies, energies_copy)
             
 
     @property
