@@ -23,7 +23,8 @@ from .utils import estimate_computation_speed
 
 @numba.jit(nopython=True)
 def ChainsInteraction_update_energies_receptor_numba(substrates2, receptor, 
-                                                     interaction_range, out):
+                                                     interaction_range,
+                                                     cross_talk, out):
     """ update interaction energies of the `receptor` with the substrates
     and save them in `out` """ 
     cnt_s, l_s2 = substrates2.shape
@@ -32,35 +33,39 @@ def ChainsInteraction_update_energies_receptor_numba(substrates2, receptor,
     if interaction_range < l_r:
         # the substrates interact with part of the receptor
         rng = interaction_range            
+        e1 = cross_talk * rng 
+        e2 = 1 - cross_talk 
         for s in xrange(cnt_s): #< calculate for all substrates
-            overlap_max = 0
+            bonds_max = 0
             for i in xrange(l_s): #< try all substrate translations
                 for j in xrange(l_r - rng + 1): #< try all receptor translations
-                    overlap = 0
+                    bonds = 0
                     for k in xrange(rng):
                         if substrates2[s, i + k] == receptor[j + k]:
-                            overlap += 1
-                    overlap_max = max(overlap_max, overlap)
-            out[s] = overlap_max
+                            bonds += 1
+                    bonds_max = max(bonds_max, bonds)
+            out[s] = e1 + e2*bonds_max
 
     else:
         # the substrates interact with the full receptor
+        e1 = cross_talk * l_r 
+        e2 = 1 - cross_talk 
         for s in xrange(cnt_s): #< calculate for all substrates
-            overlap_max = 0
+            bonds_max = 0
             for i in xrange(l_s): #< try all substrate translations
-                overlap = 0
+                bonds = 0
                 for k in xrange(l_r):
                     if substrates2[s, i + k] == receptor[k]:
-                        overlap += 1
-                overlap_max = max(overlap_max, overlap)
-            out[s] = overlap_max
+                        bonds += 1
+                bonds_max = max(bonds_max, bonds)
+            out[s] = e1 + e2*bonds_max
     
 
 def ChainsInteraction_update_energies_receptor(self, idx_r):
     """ updates the energy of the `idx_r`-th receptor """
     ChainsInteraction_update_energies_receptor_numba(
         self.substrates2, self.receptors[idx_r], self.interaction_range,
-        self.energies[:, idx_r]
+        self.cross_talk, self.energies[:, idx_r]
     )
 
 
@@ -168,7 +173,8 @@ def ChainsInteraction_get_mutual_information(self):
 
 @numba.jit(nopython=True)
 def TetrisInteraction_update_energies_receptor_numba(substrates2, receptor,
-                                                     interaction_range, out):
+                                                     interaction_range,
+                                                     cross_talk, out):
     """ update interaction energies of the `receptor` with the substrates
     and save them in `out` """ 
     cnt_s, l_s2 = substrates2.shape
@@ -178,11 +184,13 @@ def TetrisInteraction_update_energies_receptor_numba(substrates2, receptor,
     if interaction_range < l_r:
         # the substrates interact with part of the receptor
         rng = interaction_range
+        e1 = cross_talk * rng 
+        e2 = 1 - cross_talk 
         for s in xrange(cnt_s): #< calculate for all substrates
-            overlap_max = -1
+            bonds_max = -1
             for i in xrange(l_s): #< try all substrate translations
                 for j in xrange(l_r - rng  + 1): #< try all receptor translat.
-                    overlap = 0
+                    bonds = 0
                     dist_max = -1
                     # calculate how often the maximal distance occurs
                     for k in xrange(rng):
@@ -191,20 +199,22 @@ def TetrisInteraction_update_energies_receptor_numba(substrates2, receptor,
                         if dist == dist_max:
                             # the same distance as the other ones 
                             # => increment counter
-                            overlap += 1 
+                            bonds += 1 
                         elif dist > dist_max:
                             # larger distance => reset counter
                             dist_max = dist
-                            overlap = 1
-                    overlap_max = max(overlap_max, overlap)
-            out[s] = overlap_max
+                            bonds = 1
+                    bonds_max = max(bonds_max, bonds)
+            out[s] = e1 + e2*bonds_max
             
     else:
         # the substrates interact with the full receptor
+        e1 = cross_talk * l_r 
+        e2 = 1 - cross_talk
         for s in xrange(cnt_s): #< calculate for all substrates
-            overlap_max = -1
+            bonds_max = -1
             for i in xrange(l_s): #< try all substrate translations
-                overlap = 0
+                bonds = 0
                 dist_max = -1
                 # calculate how often the maximal distance occurs
                 for k in xrange(l_r):
@@ -213,20 +223,20 @@ def TetrisInteraction_update_energies_receptor_numba(substrates2, receptor,
                     if dist == dist_max:
                         # the same distance as the other ones 
                         # => increment counter
-                        overlap += 1 
+                        bonds += 1 
                     elif dist > dist_max:
                         # larger distance => reset counter
                         dist_max = dist
-                        overlap = 1
-                overlap_max = max(overlap_max, overlap)
-            out[s] = overlap_max
+                        bonds = 1
+                bonds_max = max(bonds_max, bonds)
+            out[s] = e1 + e2*bonds_max
             
 
 def TetrisInteraction_update_energies_receptor(self, idx_r):
     """ updates the energy of the `idx_r`-th receptor """
     TetrisInteraction_update_energies_receptor_numba(
         self.substrates2, self.receptors[idx_r], self.interaction_range,
-        self.energies[:, idx_r]
+        self.cross_talk, self.energies[:, idx_r]
     )
 
 

@@ -473,6 +473,7 @@ class ChainsInteraction(object):
     the receptors are linear.
     """
     
+    cross_talk = 0   #< cross-talk energy
     temperature = 1  #< temperature for equilibrium binding
     threshold = 1    #< threshold above which the receptor responds
 
@@ -541,9 +542,16 @@ class ChainsInteraction(object):
             l_r = sorted(np.random.randint(5, 11, 2))
         receptors = coll_class(cnt_r, l_r, colors, cyclic=False).choose_random()
         
-        # create object
+        # create object and set random parameters
         obj = cls(substrates, receptors, colors, interaction_range)
-        obj.temperature = np.random.randint(0, 3)
+        if random.randrange(0, 2):
+            obj.eps = 0.5 * np.random.random()
+        else:
+            obj.eps = 0
+        if random.randrange(0, 2):
+            obj.temperature = np.random.randint(0, 3)
+        else:
+            obj.temperature = 0
         obj.threshold = np.random.random()
         
         return obj
@@ -608,6 +616,7 @@ class ChainsInteraction(object):
         l_s = self.substrates2.shape[1] // 2
         l_r = len(receptor) 
 
+        # count the number of bonds
         if self.interaction_range < l_r:
             # the substrates interact with part of the receptor
             rng = self.interaction_range            
@@ -618,14 +627,20 @@ class ChainsInteraction(object):
                 for i in xrange(l_s)           #< try all substrate translations
                 for j in xrange(l_r - rng + 1) #< try all receptor translations
             ))
-
+            
         else:
             # the substrates interact with the full receptor
+            rng = l_r
             self.energies[:, idx_r] = reduce(np.maximum, (
                 np.sum(self.substrates2[:, i:i+l_r] == receptor[np.newaxis, :],
                        axis=1)
                 for i in xrange(l_s)       #< try all substrate translations
             ))
+            
+        # account for cross-talk
+        if self.cross_talk != 0:
+            self.energies[:, idx_r] *= (1 - self.cross_talk)
+            self.energies[:, idx_r] += rng * self.cross_talk 
         
                    
     def update_energies(self):
@@ -749,7 +764,7 @@ class ChainsInteractionPossibilities(object):
     
     
     def __init__(self, substrates, possible_receptors,
-                 interaction_range='full'):    
+                 interaction_range='full', **kwargs):    
         self.substrates = substrates
         self.possible_receptors = possible_receptors
         self.interaction_range = interaction_range
@@ -758,6 +773,14 @@ class ChainsInteractionPossibilities(object):
             self.substrates_data = substrates.to_list()
         except AttributeError:
             self.substrates_data = substrates
+            
+        # set parameters of the interaction class
+        if 'cross_talk' in kwargs:
+            self.interaction_class.cross_talk = kwargs['cross_talk']
+        if 'temperature' in kwargs:
+            self.interaction_class.temperature = kwargs['temperature']
+        if 'threshold' in kwargs:
+            self.interaction_class.threshold = kwargs['threshold']
             
         self._cache = {}
 
@@ -775,26 +798,6 @@ class ChainsInteractionPossibilities(object):
     def __len__(self):
         return len(self.possible_receptors)
     
-    
-    @property
-    def temperature(self):
-        """ helper property for setting the temperature of the underlying
-        interaction class """
-        return self.interaction_class.temperature
-    @temperature.setter
-    def temperature(self, value):
-        self.interaction_class.temperature = value
-    
-    
-    @property
-    def threshold(self):
-        """ helper property for setting the threshold of the underlying
-        interaction class """
-        return self.interaction_class.threshold
-    @threshold.setter
-    def threshold(self, value):
-        self.interaction_class.threshold = value
-
     
     @property
     def _interaction_range_num(self):

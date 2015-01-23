@@ -155,6 +155,7 @@ class TetrisInteraction(ChainsInteraction):
         energies = self.energies[:, idx_r]
         energies[:] = 0
 
+        # count the number of bonds
         if self.interaction_range < l_r:
             # the substrates interact with part of the receptor
             rng = self.interaction_range            
@@ -174,6 +175,7 @@ class TetrisInteraction(ChainsInteraction):
                 
         else:
             # the substrates interact with the full receptor
+            rng = l_r
             for i in xrange(l_s): #< try all substrate translations
                 # calculate the distance of all blocks
                 dist = self.substrates2[:, i:i + l_r] + receptor[np.newaxis, :]
@@ -185,6 +187,11 @@ class TetrisInteraction(ChainsInteraction):
                 
                 # take the maximum with previously calculated energies
                 np.maximum(Es, energies, energies)
+
+        # account for cross-talk
+        if self.cross_talk != 0:
+            energies *= (1 - self.cross_talk)
+            energies += rng * self.cross_talk 
         
         
         
@@ -197,10 +204,10 @@ class TetrisInteractionPossibilities(ChainsInteractionPossibilities):
     
     
     def __init__(self, substrates, possible_receptors,
-                 interaction_range='full'):      
-        super(TetrisInteractionPossibilities, self).__init__(substrates, 
-                                                             possible_receptors,
-                                                             interaction_range)
+                 interaction_range='full', **kwargs):
+        super(TetrisInteractionPossibilities, self).__init__(
+            substrates, possible_receptors, interaction_range, **kwargs
+        )
 
     @property
     def heights(self):
