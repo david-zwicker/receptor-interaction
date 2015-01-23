@@ -131,7 +131,7 @@ def estimate_optimization_speed(experiment, model):
 
 
 def ReceptorOptimizerAuto(experiment, model, time_limit=1, verbose=True,
-                          parameter_estimation=False, output=0):
+                          parameter_estimation=False, output=0, debug=False):
     """ factory that chooses the the right optimizer with the right parameters
     based on the number of receptors that have to be tested and the time limit
     that is supplied. The `time_limit` should be given in seconds.
@@ -159,8 +159,11 @@ def ReceptorOptimizerAuto(experiment, model, time_limit=1, verbose=True,
         
         if parameter_estimation:
             # automatically estimate the parameters for the simulated annealing
-            with silent_stdout():
+            if debug:
                 schedule = optimizer.auto(time_limit/60)
+            else:
+                with silent_stdout():
+                    schedule = optimizer.auto(time_limit/60)
             optimizer.set_schedule(schedule)
             
             if output != 0:
