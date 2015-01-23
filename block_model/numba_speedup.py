@@ -3,7 +3,7 @@ Created on Jan 16, 2015
 
 @author: David Zwicker <dzwicker@seas.harvard.edu>
 
-Module that monkey patches classes in other models with equivalent, but faster
+Module that monkey patches classes in other modules with equivalent, but faster
 methods.
 '''
 

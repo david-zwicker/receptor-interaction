@@ -29,6 +29,7 @@ from scipy.misc import comb
 
 from .utils import classproperty
 
+
 #===============================================================================
 # BASIC CHAIN/NECKLACE FUNCTIONS
 #===============================================================================
@@ -473,18 +474,16 @@ class ChainsState(object):
     the receptors are linear.
     """
     
-    cross_talk = 0   #< cross-talk energy
-    # TODO: change that to an instance property
-
     item_collection_class = ChainCollections
 
     
-    def __init__(self, substrates, receptors, colors, interaction_range=1000, 
-                 cache=None, energies=None):
+    def __init__(self, substrates, receptors, colors, cross_talk=0, 
+                 interaction_range=1000, cache=None, energies=None):
         
         self.substrates = substrates
         self.receptors = receptors
         self.colors = colors
+        self.cross_talk = cross_talk
         # interaction range cannot be larger than the size of the substrate
         self.interaction_range = min(interaction_range, self.substrates.shape[1])
 
@@ -595,7 +594,7 @@ class ChainsState(object):
         else:
             receptors = self.receptors[:]
         return self.__class__(self.substrates, receptors, self.colors,
-                              self.interaction_range,
+                              self.cross_talk, self.interaction_range,
                               self._cache, self.energies.copy())
         
         
@@ -683,22 +682,39 @@ class ChainsModel(object):
     keep_length_factor = 5
     
     
-    def __init__(self, substrates, possible_receptors,
-                 interaction_range='full', **kwargs):    
+    def __init__(self, substrates, possible_receptors, **kwargs):
         self.substrates = substrates
-        self.possible_receptors = possible_receptors
-        self.interaction_range = interaction_range
-        
         try:
             self.substrates_data = substrates.to_list()
         except AttributeError:
             self.substrates_data = substrates
             
-        # set parameters of the interaction class
+        self.possible_receptors = possible_receptors
+        
+        # determine the parameters for single states
+        if 'state_parameters' in kwargs:
+            state_parameters = kwargs.pop('state_parameters')
+        else:
+            state_parameters = {'colors': possible_receptors.colors,
+                                'cross_talk': 0,
+                                'interaction_range': 'full'}
         if 'cross_talk' in kwargs:
-            self.state_class.cross_talk = kwargs['cross_talk']
+            state_parameters['cross_talk'] = kwargs.pop('cross_talk')
+        if 'interaction_range' in kwargs:
+            state_parameters['cross_talk'] = kwargs.pop('cross_talk')
+            interaction_range = kwargs.pop('interaction_range')
             
+        if state_parameters['interaction_range'] == 'full':
+            l_s = self.substrates_data.shape[1]
+            l_r = self.possible_receptors.l_max
+            state_parameters['interaction_range'] = max(l_s, l_r)
+        else:  
+            state_parameters['interaction_range'] = interaction_range
+
+        self.state_parameters = state_parameters
+        
         self._cache = {}
+
 
     @property
     def colors(self):
@@ -706,9 +722,9 @@ class ChainsModel(object):
 
 
     def __repr__(self):
-        return ('%s(substrates=%r, receptors=%r, interaction_range=%r)' %
+        return ('%s(substrates=%r, receptors=%r, state_parameters=%r)' %
                 (self.__class__.__name__, self.substrates,
-                 self.possible_receptors, self.interaction_range))
+                 self.possible_receptors, self.state_parameters))
         
         
     @property
@@ -716,16 +732,7 @@ class ChainsModel(object):
         return len(self.possible_receptors)
     
     
-    @property
-    def _interaction_range_num(self):
-        """ returns a numeric value for the interaction range """
-        if self.interaction_range == 'full':
-            return 10000
-        else:
-            return self.interaction_range
-        
-    
-    def iterstates(self):
+    def iterate_states(self):
         """ generates all possible chain interactions """
         #TODO: try to increase the performance by
         #    * taking advantage of partially calculated energies
@@ -733,7 +740,7 @@ class ChainsModel(object):
         # create an initial state object
         receptors = self.possible_receptors.choose_random()
         state = self.state_class(self.substrates_data, receptors,
-                                 self.colors, self._interaction_range_num)
+                                 **self.state_parameters)
         
         # iterate over all receptors and update the state object
         for receptors in self.possible_receptors:
@@ -746,7 +753,7 @@ class ChainsModel(object):
         """ returns a randomly chosen chain interaction """
         receptors = self.possible_receptors.choose_random()
         obj = self.state_class(self.substrates_data, receptors,
-                               self.colors, self._interaction_range_num)
+                               **self.state_parameters)
         return obj
     
     

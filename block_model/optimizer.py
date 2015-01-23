@@ -52,7 +52,7 @@ class ReceptorOptimizerBruteForce(object):
 
         state_best, MI_best = None, -1
         self.start = time.time()
-        for step, state in enumerate(self.model.iterstates()):
+        for step, state in enumerate(self.model.iterate_states()):
             MI = self.experiment.get_mutual_information(state)
             if MI > MI_best:
                 state_best, MI_best = state.copy(), MI

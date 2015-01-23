@@ -28,7 +28,7 @@ def estimate_computation_speed(func, *args, **kwargs):
         test_func = func
     
     # call function once to allow caches be filled
-    test_func()    
+    test_func()
      
     # call the function until the total time is achieved
     number, duration = 1, 0

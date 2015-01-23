@@ -27,8 +27,13 @@ class DetectSingleSubstrate(object):
         self.threshold = threshold
         
         self._cache = {}
-    
-    
+
+
+    def __repr__(self):
+        return ('%s(temperature=%r, threshold=%r)' %
+                (self.__class__.__name__, self.temperature, self.threshold))
+        
+        
     @classmethod
     def create_test_instance(cls):
         """ creates a instance of the class with random parameters """

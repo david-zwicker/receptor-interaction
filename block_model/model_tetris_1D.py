@@ -134,12 +134,6 @@ class TetrisState(ChainsState):
 
     item_collection_class = TetrisCollections
 
-    
-    def __init__(self, substrates, receptors, heights, interaction_range=1000,
-                 cache=None, energies=None):
-        super(TetrisState, self).__init__(substrates, receptors, heights,
-                                          interaction_range, cache, energies)
-
     @property
     def heights(self):
         return self.colors
@@ -201,13 +195,6 @@ class TetrisModel(ChainsModel):
     receptor_collection_class = TetrisCollections
     state_class = TetrisState
     
-    
-    def __init__(self, substrates, possible_receptors, interaction_range='full',
-                 **kwargs):
-        super(TetrisModel, self).__init__(
-            substrates, possible_receptors, interaction_range, **kwargs
-        )
-
     @property
     def heights(self):
         return self.possible_receptors.heights
