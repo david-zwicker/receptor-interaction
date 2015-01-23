@@ -14,10 +14,12 @@ import functools
 import numba
 import numpy as np
 
-import model_block_1D
-import model_tetris_1D
-from .model_block_1D import calc_entropy  # @UnusedImport
 from .utils import estimate_computation_speed
+
+# these methods are used in getattr calls
+import model_block_1D  # @UnusedImport
+import model_tetris_1D  # @UnusedImport
+from .model_block_1D import calc_entropy  # @UnusedImport
 
 
 
@@ -263,43 +265,57 @@ class NumbaPatcher(object):
     # list of methods that have a numba equivalent
     #TODO: the arguments should be dictionaries for clearer meaning
     numba_methods = {
-        'model_block_1D.ChainsInteraction.update_energies_receptor': (
-            model_block_1D.ChainsInteraction.update_energies_receptor,
-            ChainsInteraction_update_energies_receptor,
-            check_energies, {'idx_r': 0}
-        ),
-        'model_block_1D.ChainsInteraction.get_mutual_information': (
-            model_block_1D.ChainsInteraction.get_mutual_information,
-            ChainsInteraction_get_mutual_information,
-            check_return_value, {}
-        ),
-        'model_tetris_1D.TetrisInteraction.update_energies_receptor': (
-            model_tetris_1D.TetrisInteraction.update_energies_receptor,
-            TetrisInteraction_update_energies_receptor,
-            check_energies, {'idx_r': 0}
-        ),
+        'model_block_1D.ChainsInteraction.update_energies_receptor': {
+            'numba': ChainsInteraction_update_energies_receptor,
+            'test_function': check_energies,
+            'test_arguments': {'idx_r': 0},
+        },
+        'model_block_1D.ChainsInteraction.get_mutual_information': {
+            'numba': ChainsInteraction_get_mutual_information,
+            'test_function': check_return_value,
+            'test_arguments': {},
+        },
+        'model_tetris_1D.TetrisInteraction.update_energies_receptor': {
+            'numba': TetrisInteraction_update_energies_receptor,
+            'test_function': check_energies,
+            'test_arguments': {'idx_r': 0},
+        },
     }
     
+    saved_original_functions = False
     enabled = False #< whether numba speed-up is enabled or not
+
+    
+    @classmethod
+    def _backup_original_function(cls):
+        """ save the original function such that they can be restored later """
+        for name, data in cls.numba_methods.iteritems():
+            module, class_name, method_name = name.split('.')
+            class_obj = getattr(globals()[module], class_name)
+            data['original'] = getattr(class_obj, method_name)
+        cls.saved_original_functions = True
 
 
     @classmethod
     def enable(cls):
         """ enables the numba methods """
-        for name, funcs in cls.numba_methods.iteritems():
+        if not cls.saved_original_functions:
+            cls._backup_original_function()
+        
+        for name, data in cls.numba_methods.iteritems():
             module, class_name, method_name = name.split('.')
             class_obj = getattr(globals()[module], class_name)
-            setattr(class_obj, method_name, funcs[1])
+            setattr(class_obj, method_name, data['numba'])
         cls.enabled = True
             
             
     @classmethod
     def disable(cls):
         """ disable the numba methods """
-        for name, funcs in cls.numba_methods.iteritems():
+        for name, data in cls.numba_methods.iteritems():
             module, class_name, method_name = name.split('.')
             class_obj = getattr(globals()[module], class_name)
-            setattr(class_obj, method_name, funcs[0])
+            setattr(class_obj, method_name, data['original'])
         cls.enabled = False
         
         
@@ -322,22 +338,20 @@ class NumbaPatcher(object):
         """ tests the consistency of the numba methods with their original
         counter parts """        
         problems = 0
-        for name, funcs in cls.numba_methods.iteritems():
+        for name, data in cls.numba_methods.iteritems():
             # extract the class and the functions
             module, class_name, _ = name.split('.')
             class_obj = getattr(globals()[module], class_name)
 
             # extract the test function
-            try:
-                test_func = funcs[2]
-            except IndexError:
-                continue
+            test_func = data['test_function']
+            test_args = data['test_arguments']
+            func1 = functools.partial(data['original'], **test_args)
+            func2 = functools.partial(data['numba'], **test_args)
             
             # check the functions multiple times
             for _ in xrange(repeat):
                 test_obj = class_obj.create_test_instance()
-                func1 = functools.partial(funcs[0], **funcs[3])
-                func2 = functools.partial(funcs[1], **funcs[3])
                 if not test_func(test_obj, (func1, func2)):
                     print('The numba implementation of `%s` is invalid.' % name)
                     print('Native implementation yields %s' % func1(test_obj))
@@ -358,13 +372,14 @@ class NumbaPatcher(object):
     @classmethod
     def test_speedup(cls, test_duration=1):
         """ tests the speed up of the supplied methods """
-        for name, funcs in cls.numba_methods.iteritems():
+        for name, data in cls.numba_methods.iteritems():
             # extract the class and the functions
             module, class_name, func_name = name.split('.')
             class_obj = getattr(globals()[module], class_name)
             test_obj = class_obj.create_test_instance()
-            func1 = functools.partial(funcs[0], **funcs[3])
-            func2 = functools.partial(funcs[1], **funcs[3])
+            test_args = data['test_arguments']
+            func1 = functools.partial(data['original'], **test_args)
+            func2 = functools.partial(data['numba'], **test_args)
             
             # check the runtime of the original implementation
             speed1 = estimate_computation_speed(func1, test_obj,
@@ -375,4 +390,5 @@ class NumbaPatcher(object):
             
             print('%s.%s: %g times faster' 
                   % (class_name, func_name, speed2/speed1))
+            
             
