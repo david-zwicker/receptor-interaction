@@ -16,6 +16,7 @@ except ImportError:
 def optimize_receptors(data):
     """ convenience function for receptor optimization where all parameters
     are given as a single dictionary """
+    
     # choose substrates
     substrates = data['collection'](
         data['cnt_s'], data['l_s'], data['colors'], cyclic=True
@@ -27,7 +28,11 @@ def optimize_receptors(data):
     )
 
     # define the model
-    model = data['model'](substrates, receptors, data['interaction_range'])
+    model = data['model'](
+        substrates, receptors,
+        cross_talk=data['cross_talk'],
+        interaction_range=data['interaction_range']
+    )
 
     # define the experiment
     experiment = data['experiment'](
