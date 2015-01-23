@@ -19,14 +19,19 @@ from .utils import estimate_computation_speed
 # these methods are used in getattr calls
 import model_block_1D  # @UnusedImport
 import model_tetris_1D  # @UnusedImport
-from .model_block_1D import calc_entropy  # @UnusedImport
+import experiments  # @UnusedImport
+from .utils import calc_entropy  # @UnusedImport
 
+
+#===============================================================================
+# NUMBA DEFINITIONS FOR MODELS
+#===============================================================================
 
 
 @numba.jit(nopython=True)
-def ChainsInteraction_update_energies_receptor_numba(substrates2, receptor, 
-                                                     interaction_range,
-                                                     cross_talk, out):
+def ChainsState_update_energies_receptor_numba(substrates2, receptor, 
+                                               interaction_range, cross_talk,
+                                               out):
     """ update interaction energies of the `receptor` with the substrates
     and save them in `out` """ 
     cnt_s, l_s2 = substrates2.shape
@@ -63,9 +68,9 @@ def ChainsInteraction_update_energies_receptor_numba(substrates2, receptor,
             out[s] = e1 + e2*bonds_max
     
 
-def ChainsInteraction_update_energies_receptor(self, idx_r):
+def ChainsState_update_energies_receptor(self, idx_r):
     """ updates the energy of the `idx_r`-th receptor """
-    ChainsInteraction_update_energies_receptor_numba(
+    ChainsState_update_energies_receptor_numba(
         self.substrates2, self.receptors[idx_r], self.interaction_range,
         self.cross_talk, self.energies[:, idx_r]
     )
@@ -73,110 +78,9 @@ def ChainsInteraction_update_energies_receptor(self, idx_r):
 
 
 @numba.jit(nopython=True)
-def ChainsInteraction_get_output_vector_numba(energies, temperature, threshold,
-                                              out):
-    """ calculate output vector for given receptors """
-    cnt_s, cnt_r = energies.shape
-    threshold /= cnt_r #< normalize threshold to number of receptors
-     
-    # iterate over all substrates
-    for s in xrange(cnt_s):
-        if temperature == 0:
-            # only the receptors with maximal interaction energy contribute
-            
-            # determine maximal energies for each substrate and count how many
-            # receptors have this maximal energy
-            Emax = 0
-            count = 0
-            for r in xrange(cnt_r):
-                if energies[s, r] == Emax:
-                    count += 1
-                elif energies[s, r] > Emax:
-                    count = 1
-                    Emax = energies[s, r]
-            
-            # encode output in single integer
-            output = 0
-            if 1 >= threshold*count:
-                # there are few enough active receptors such that they get above
-                # threshold
-                base = 1
-                for r in xrange(cnt_r):
-                    # only consider receptors that have the maximal energy 
-                    if energies[s, r] == Emax:
-                        output += base
-                    base *= 2
-            out[s] = output
-            
-        else:
-            # receptors contribute according to Boltzmann weights
-            
-            # calculate the total interaction probabilities for normalization
-            total = 0
-            for r in xrange(cnt_r):
-                total += np.exp(energies[s, r]/temperature)
-            
-            # encode output in single integer
-            output = 0
-            base = 1
-            Ethresh = temperature * np.log(threshold * total)
-            for r in xrange(cnt_r):
-                # only consider receptors above the threshold; test for
-                #     np.exp(energies[s, r]/temperature)/total >= threshold
-                if energies[s, r] >= Ethresh:
-                    output += base
-                base *= 2
-            out[s] = output
-
-
-@numba.jit(nopython=True)
-def ChainsInteraction_get_mutual_information_numba(output_vector):
-    """ calculates the mutual information of the sorted output_vector """
-    if len(output_vector) == 0:
-        return 0
-    
-    # calculate the entropy in the output vector
-    entropy = 0
-    count = 1
-    last_val = output_vector[0]
-    for val in output_vector[1:]:
-        if val == last_val:
-            count += 1
-        else:
-            entropy += count*np.log2(count)
-            last_val = val
-            count = 1
-    entropy += count*np.log2(count)
-    
-    cnt_s = len(output_vector)
-    return np.log2(cnt_s) - entropy/cnt_s
-        
-    
-def ChainsInteraction_get_mutual_information(self):
-    """ calculate output vector for given receptors """
-    # create or load a temporary array to store the output vector into
-    cnt_s = len(self.energies)
-    try:
-        output_vector = ChainsInteraction_get_mutual_information.cache[:cnt_s]
-        if len(output_vector) < cnt_s:
-            raise AttributeError #< to fall into exception branch
-    except AttributeError:
-        ChainsInteraction_get_mutual_information.cache = np.empty(cnt_s, np.int)
-        output_vector = ChainsInteraction_get_mutual_information.cache
-    
-    # calculate the output vector
-    ChainsInteraction_get_output_vector_numba(self.energies, self.temperature,
-                                              self.threshold, output_vector)
-    # calculate the mutual information
-    output_vector.sort()
-    return ChainsInteraction_get_mutual_information_numba(output_vector)
-
-
-
-@numba.jit(nopython=True)
-def TetrisInteraction_update_energies_receptor_numba(substrates2, receptor,
-                                                     interaction_range,
-                                                     cross_talk, out):
+def TetrisState_update_energies_receptor_numba(substrates2, receptor,
+                                               interaction_range, cross_talk,
+                                               out):
     """ update interaction energies of the `receptor` with the substrates
     and save them in `out` """ 
     cnt_s, l_s2 = substrates2.shape
@@ -234,12 +138,127 @@ def TetrisInteraction_update_energies_receptor_numba(substrates2, receptor,
             out[s] = e1 + e2*bonds_max
             
 
-def TetrisInteraction_update_energies_receptor(self, idx_r):
+def TetrisState_update_energies_receptor(self, idx_r):
     """ updates the energy of the `idx_r`-th receptor """
-    TetrisInteraction_update_energies_receptor_numba(
+    TetrisState_update_energies_receptor_numba(
         self.substrates2, self.receptors[idx_r], self.interaction_range,
         self.cross_talk, self.energies[:, idx_r]
     )
+
+
+#===============================================================================
+# NUMBA DEFINITIONS FOR EXPERIMENTS
+#===============================================================================
+
+
+@numba.jit(nopython=True)
+def DetectSingleSubstrate_get_output_vector_numba(energies, temperature,
+                                                  threshold, out):
+    """ calculate output vector for given receptors """
+    cnt_s, cnt_r = energies.shape
+    threshold /= cnt_r #< normalize threshold to number of receptors
+     
+    # iterate over all substrates
+    for s in xrange(cnt_s):
+        if temperature == 0:
+            # only the receptors with maximal interaction energy contribute
+            
+            # determine maximal energies for each substrate and count how many
+            # receptors have this maximal energy
+            Emax = 0
+            count = 0
+            for r in xrange(cnt_r):
+                if energies[s, r] == Emax:
+                    count += 1
+                elif energies[s, r] > Emax:
+                    count = 1
+                    Emax = energies[s, r]
+            
+            # encode output in single integer
+            output = 0
+            if 1 >= threshold*count:
+                # there are few enough active receptors such that they get above
+                # threshold
+                base = 1
+                for r in xrange(cnt_r):
+                    # only consider receptors that have the maximal energy 
+                    if energies[s, r] == Emax:
+                        output += base
+                    base *= 2
+            out[s] = output
+            
+        else:
+            # receptors contribute according to Boltzmann weights
+            
+            # calculate the total interaction probabilities for normalization
+            total = 0
+            for r in xrange(cnt_r):
+                total += np.exp(energies[s, r]/temperature)
+            
+            # encode output in single integer
+            output = 0
+            base = 1
+            Ethresh = temperature * np.log(threshold * total)
+            for r in xrange(cnt_r):
+                # only consider receptors above the threshold; test for
+                #     np.exp(energies[s, r]/temperature)/total >= threshold
+                if energies[s, r] >= Ethresh:
+                    output += base
+                base *= 2
+            out[s] = output
+
+
+@numba.jit(nopython=True)
+def DetectSingleSubstrate_get_mutual_information_numba(output_vector):
+    """ calculates the mutual information of the sorted output_vector """
+    if len(output_vector) == 0:
+        return 0
+    
+    # calculate the entropy in the output vector
+    entropy = 0
+    count = 1
+    last_val = output_vector[0]
+    for val in output_vector[1:]:
+        if val == last_val:
+            count += 1
+        else:
+            entropy += count*np.log2(count)
+            last_val = val
+            count = 1
+    entropy += count*np.log2(count)
+    
+    cnt_s = len(output_vector)
+    return np.log2(cnt_s) - entropy/cnt_s
+        
+    
+def DetectSingleSubstrate_get_mutual_information(self, state):
+    """ calculate output vector for given receptors """
+    # create or load a temporary array to store the output vector into
+    cnt_s = len(state.energies)
+    try:
+        output_vector = DetectSingleSubstrate_get_mutual_information.cache[:cnt_s]
+        if len(output_vector) < cnt_s:
+            raise AttributeError #< to fall into exception branch
+    except AttributeError:
+        DetectSingleSubstrate_get_mutual_information.cache = np.empty(cnt_s, np.int)
+        output_vector = DetectSingleSubstrate_get_mutual_information.cache
+    
+    # calculate the output vector
+    DetectSingleSubstrate_get_output_vector_numba(state.energies, self.temperature,
+                                                  self.threshold, output_vector)
+    # calculate the mutual information
+    output_vector.sort()
+    return DetectSingleSubstrate_get_mutual_information_numba(output_vector)
+
+
+#===============================================================================
+# FUNCTIONS/CLASSES INJECTING THE NUMBA ACCELERATIONS
+#===============================================================================
+
+
+def create_test_state():
+    """ creates a random test state """
+    return model_block_1D.ChainsState.create_test_instance()
 
 
 
@@ -252,6 +271,7 @@ def check_energies(obj, (func1, func2)):
     return np.allclose(obj1.energies, obj2.energies)
 
 
+
 def check_return_value(obj, (func1, func2)):
     """ checks the numba method versus the original one """
     return np.allclose(func1(obj), func2(obj))
@@ -262,23 +282,22 @@ class NumbaPatcher(object):
     """ class for managing numba monkey patching in this package. This class
     only provides class methods since it is used as a singleton. """   
     
-    # list of methods that have a numba equivalent
-    #TODO: the arguments should be dictionaries for clearer meaning
+    # register methods that have a numba equivalent
     numba_methods = {
-        'model_block_1D.ChainsInteraction.update_energies_receptor': {
-            'numba': ChainsInteraction_update_energies_receptor,
+        'model_block_1D.ChainsState.update_energies_receptor': {
+            'numba': ChainsState_update_energies_receptor,
             'test_function': check_energies,
             'test_arguments': {'idx_r': 0},
         },
-        'model_block_1D.ChainsInteraction.get_mutual_information': {
-            'numba': ChainsInteraction_get_mutual_information,
+        'model_tetris_1D.TetrisState.update_energies_receptor': {
+            'numba': TetrisState_update_energies_receptor,
+            'test_function': check_energies,
+            'test_arguments': {'idx_r': 0},
+        },
+        'experiments.DetectSingleSubstrate.get_mutual_information': {
+            'numba': DetectSingleSubstrate_get_mutual_information,
             'test_function': check_return_value,
-            'test_arguments': {},
-        },
-        'model_tetris_1D.TetrisInteraction.update_energies_receptor': {
-            'numba': TetrisInteraction_update_energies_receptor,
-            'test_function': check_energies,
-            'test_arguments': {'idx_r': 0},
+            'test_arguments': {'state': create_test_state},
         },
     }
     
@@ -332,6 +351,22 @@ class NumbaPatcher(object):
             if verbose:
                 print('Numba speed-ups have been enabled.')
             
+    
+    @classmethod
+    def prepare_functions(cls, data):
+        """ prepares the arguments for the two functions that we want to test """
+        # prepare the arguments
+        test_args = data['test_arguments'].copy()
+        for key, value in test_args.iteritems():
+            if callable(value):
+                test_args[key] = value()
+                
+        # inject the arguments
+        func1 = functools.partial(data['original'], **test_args)
+        func2 = functools.partial(data['numba'], **test_args)
+        return func1, func2
+
+            
             
     @classmethod
     def test_consistency(cls, repeat=10, verbose=False):
@@ -345,13 +380,11 @@ class NumbaPatcher(object):
 
             # extract the test function
             test_func = data['test_function']
-            test_args = data['test_arguments']
-            func1 = functools.partial(data['original'], **test_args)
-            func2 = functools.partial(data['numba'], **test_args)
             
             # check the functions multiple times
             for _ in xrange(repeat):
                 test_obj = class_obj.create_test_instance()
+                func1, func2 = cls.prepare_functions(data)
                 if not test_func(test_obj, (func1, func2)):
                     print('The numba implementation of `%s` is invalid.' % name)
                     print('Native implementation yields %s' % func1(test_obj))
@@ -377,10 +410,8 @@ class NumbaPatcher(object):
             module, class_name, func_name = name.split('.')
             class_obj = getattr(globals()[module], class_name)
             test_obj = class_obj.create_test_instance()
-            test_args = data['test_arguments']
-            func1 = functools.partial(data['original'], **test_args)
-            func2 = functools.partial(data['numba'], **test_args)
-            
+            func1, func2 = cls.prepare_functions(data)
+                            
             # check the runtime of the original implementation
             speed1 = estimate_computation_speed(func1, test_obj,
                                                 test_duration=test_duration)

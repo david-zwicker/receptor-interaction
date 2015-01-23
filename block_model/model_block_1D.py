@@ -27,7 +27,7 @@ import numpy as np
 from collections import Counter
 from scipy.misc import comb
 
-from .utils import calc_entropy, classproperty, estimate_computation_speed
+from .utils import classproperty
 
 #===============================================================================
 # BASIC CHAIN/NECKLACE FUNCTIONS
@@ -465,7 +465,7 @@ class ChainCollections(object):
 #===============================================================================
 
     
-class ChainsInteraction(object):
+class ChainsState(object):
     """ class that represents the interaction between a set of substrates and a
     set of receptors.
     
@@ -474,8 +474,7 @@ class ChainsInteraction(object):
     """
     
     cross_talk = 0   #< cross-talk energy
-    temperature = 1  #< temperature for equilibrium binding
-    threshold = 1    #< threshold above which the receptor responds
+    # TODO: change that to an instance property
 
     item_collection_class = ChainCollections
 
@@ -486,7 +485,8 @@ class ChainsInteraction(object):
         self.substrates = substrates
         self.receptors = receptors
         self.colors = colors
-        self.interaction_range = interaction_range
+        # interaction range cannot be larger than the size of the substrate
+        self.interaction_range = min(interaction_range, self.substrates.shape[1])
 
         if cache is None:
             self._cache = {}
@@ -664,103 +664,23 @@ class ChainsInteraction(object):
         else:
             # choose random receptors of unequal length
             raise NotImplementedError
-    
 
-    def get_binding_probabilities(self):
-        """
-        Calculates the probability of substrates binding to receptors given
-        interaction energies described by a matrix energies[substrate, receptor].
-        Here, we consider the case that a single substrate must bind to any
-        receptor and calculate the coverage ratio of the receptors given many
-        realizations.
-        """
-        if self.temperature == 0:
-            # determine maximal energies for each substrate
-            Emax = self.energies.max(axis=1)
-            # determine the receptors that are activated
-            probs = (self.energies == Emax[:, np.newaxis]).astype(np.double)
-            
-        else:
-            # calculate interaction probabilities
-            probs = np.exp(self.energies/self.temperature)
-            
-        # normalize for each substrate across all receptors
-        # => scenario in which each substrate binds to exactly one receptor
-        probs /= np.sum(probs, axis=1)[:, None]
-        
-        return probs
-    
-    
-    @property
-    def binary_base(self):
-        """ return repeated substrates to implement periodic boundary
-        conditions """
-        try:
-            return self._cache['binary_base']
-        except KeyError:
-            cnt_r = len(self.receptors)
-            self._cache['binary_base'] = np.exp2(np.arange(cnt_r))
-            return self._cache['binary_base']
-        
-        
-    def get_output_vector(self):
-        """ calculate output vector for given receptors """
-        # calculate the resulting binding characteristics
-        probs = self.get_binding_probabilities()
-        # threshold to get the response
-        output = (probs > self.threshold/self.receptor_count)
-        # encode output in single integer
-        return np.dot(output, self.binary_base) 
-        
-    
-    def get_mutual_information(self):
-        """ calculate the mutual information between substrates and receptors
-        """
-        output = self.get_output_vector()
-        
-        # determine the contribution from the output distribution        
-        entropy_o = calc_entropy(output)
-        
-        cnt_s = len(output)
-        return np.log2(cnt_s) - entropy_o/cnt_s
 
-    
     @property
-    def substrate_count(self):
-        return len(self.substrates)
-    
-    @property
-    def receptor_count(self):
+    def num_receptors(self):
         return len(self.receptors)
     
-    @property
-    def output_count(self):
-        """ number of different outputs """
-        # the 2 is due to the binary output of the receptors
-        return 2 ** len(self.receptors)
-    
-    @property
-    def mutual_information_max(self):
-        """ return upper bound for mutual information """
-        # maximal mutual information restricted by the output
-        MI_receptors = np.log2(self.output_count)
-        
-        # maximal mutual information restricted by substrates
-        MI_substrates = np.log2(self.substrate_count)
-        
-        return min(MI_receptors, MI_substrates)
 
 
-
-class ChainsInteractionPossibilities(object):
+class ChainsModel(object):
     """ class that represents all possible combinations of substrate and
     receptor interactions """
     
-    interaction_class = ChainsInteraction
+    state_class = ChainsState
     
     # factor determining how often the length of a receptor is kept versus
     # changing its length:
-    keep_length_factor = 5   
+    keep_length_factor = 5
     
     
     def __init__(self, substrates, possible_receptors,
@@ -776,11 +696,7 @@ class ChainsInteractionPossibilities(object):
             
         # set parameters of the interaction class
         if 'cross_talk' in kwargs:
-            self.interaction_class.cross_talk = kwargs['cross_talk']
-        if 'temperature' in kwargs:
-            self.interaction_class.temperature = kwargs['temperature']
-        if 'threshold' in kwargs:
-            self.interaction_class.threshold = kwargs['threshold']
+            self.state_class.cross_talk = kwargs['cross_talk']
             
         self._cache = {}
 
@@ -795,7 +711,8 @@ class ChainsInteractionPossibilities(object):
                  self.possible_receptors, self.interaction_range))
         
         
-    def __len__(self):
+    @property
+    def num_states(self):
         return len(self.possible_receptors)
     
     
@@ -808,15 +725,15 @@ class ChainsInteractionPossibilities(object):
             return self.interaction_range
         
     
-    def __iter__(self):
+    def iterstates(self):
         """ generates all possible chain interactions """
         #TODO: try to increase the performance by
         #    * taking advantage of partially calculated energies
         
         # create an initial state object
         receptors = self.possible_receptors.choose_random()
-        state = self.interaction_class(self.substrates_data, receptors,
-                                       self.colors, self._interaction_range_num)
+        state = self.state_class(self.substrates_data, receptors,
+                                 self.colors, self._interaction_range_num)
         
         # iterate over all receptors and update the state object
         for receptors in self.possible_receptors:
@@ -828,11 +745,8 @@ class ChainsInteractionPossibilities(object):
     def get_random_state(self):
         """ returns a randomly chosen chain interaction """
         receptors = self.possible_receptors.choose_random()
-        obj = self.interaction_class(self.substrates_data, receptors,
-                                     self.colors, self._interaction_range_num)
-        # choose random parameters
-        obj.temperature = random.randrange(0, 3)
-        obj.threshold = random.random() + 0.5
+        obj = self.state_class(self.substrates_data, receptors,
+                               self.colors, self._interaction_range_num)
         return obj
     
     
@@ -935,14 +849,17 @@ class ChainsInteractionPossibilities(object):
 #         state.update_energies()
 #         assert np.allclose(state.energies, energies_copy)
             
+
+    @property
+    def num_substrates(self):
+        return len(self.substrates)
     
-    def estimate_computation_speed(self):
-        """ estimate the speed of the computation of a single iteration """
-        # define test state and test function
-        state = self.get_random_state()
-        def one_computation_step():
-            """ test function for estimating the speed """
-            state.update_energies()
-            state.get_mutual_information()
-            
-        return estimate_computation_speed(one_computation_step)
+    @property
+    def num_receptors(self):
+        return self.possible_receptors.cnt
+    
+    @property
+    def output_dim(self):
+        """ number of different outputs """
+        # the 2 is due to the binary output of the receptors
+        return 2 ** self.num_receptors

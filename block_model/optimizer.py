@@ -10,20 +10,22 @@ import time
 
 from simanneal import Annealer
 
-from .utils import silent_stdout
+from .utils import silent_stdout, estimate_computation_speed
+
 
 
 class ReceptorOptimizerBruteForce(object):
     """ class for finding optimal receptor distribution using and exhaustive
     search """
 
-    def __init__(self, possible_states, output=0):
+    def __init__(self, experiment, model, output=0):
         """
         `possible_states` must be a class that handles all possible states
         `output` indicates the approximate time in seconds between progress
             output. If output <= 0, no output is done
         """
-        self.possible_states = possible_states
+        self.experiment = experiment
+        self.model = model
         self.start = 0 #< start time
         self.output = output
         
@@ -46,12 +48,12 @@ class ReceptorOptimizerBruteForce(object):
         with the achieved mutual information.
         Extra information about the optimization procedure is stored in the
         `info` dictionary of this object """
-        self.info['states_total'] = len(self.possible_states)
+        self.info['states_total'] = self.model.num_states
 
         state_best, MI_best = None, -1
         self.start = time.time()
-        for step, state in enumerate(self.possible_states):
-            MI = state.get_mutual_information()
+        for step, state in enumerate(self.model.iterstates()):
+            MI = self.experiment.get_mutual_information(state)
             if MI > MI_best:
                 state_best, MI_best = state.copy(), MI
                 multiplicity = 1
@@ -81,11 +83,12 @@ class ReceptorOptimizerAnnealing(Annealer):
     copy_strategy = 'method'
 
 
-    def __init__(self, possible_states):
+    def __init__(self, experiment, model):
         """ `state_collection` must be a class that handles all possible states
         """
-        self.possible_states = possible_states
-        initial_state = possible_states.get_random_state()
+        self.experiment = experiment
+        self.model = model
+        initial_state = model.get_random_state()
         super(ReceptorOptimizerAnnealing, self).__init__(initial_state)
 
         self.info = {}
@@ -93,12 +96,12 @@ class ReceptorOptimizerAnnealing(Annealer):
 
     def move(self):
         """ change a single bit in any of the receptor vectors """
-        self.possible_states.mutate_state(self.state)
+        self.model.mutate_state(self.state)
         
         
     def energy(self):
         """ returns the energy of the current state """
-        return -self.state.get_mutual_information()
+        return -self.experiment.get_mutual_information(self.state)
     
     
     def optimize(self):
@@ -113,32 +116,46 @@ class ReceptorOptimizerAnnealing(Annealer):
 
 
 
-def ReceptorOptimizerAuto(state_collection, time_limit=1, verbose=True,
+def estimate_optimization_speed(experiment, model):
+    """ estimate the speed of the computation of a single optimization
+    iteration """
+    # define test state and test function
+    state = model.get_random_state()
+    def one_computation_step():
+        """ test function for estimating the speed """
+        state.update_energies()
+        experiment.get_mutual_information(state)
+            
+    return estimate_computation_speed(one_computation_step)
+
+
+
+def ReceptorOptimizerAuto(experiment, model, time_limit=1, verbose=True,
                           parameter_estimation=False, output=0):
     """ factory that chooses the the right optimizer with the right parameters
     based on the number of receptors that have to be tested and the time limit
     that is supplied. The `time_limit` should be given in seconds.
     """
     # estimate how many iterations we can do per second 
-    items_per_sec = state_collection.estimate_computation_speed()
+    items_per_sec = estimate_optimization_speed(experiment, model)
     max_iter = items_per_sec*time_limit
 
     # determine which optimizer to use based on time constraints    
-    if len(state_collection) < max_iter:
+    if model.num_states < max_iter:
         # few steps => use brute force
         if verbose:
             print('Brute force for %d items (est. %d items/sec)'
-                  % (len(state_collection), items_per_sec)) 
-        optimizer = ReceptorOptimizerBruteForce(state_collection, output=output)
+                  % (model.num_states, items_per_sec)) 
+        optimizer = ReceptorOptimizerBruteForce(experiment, model, output=output)
         
     else:
         # many steps => use simulated annealing
         if verbose:
             print('Simulated annealing for %d items (est. %d items/sec)' 
-                  % (len(state_collection), items_per_sec)) 
+                  % (model.num_states, items_per_sec)) 
 
         # create optimizer instance            
-        optimizer = ReceptorOptimizerAnnealing(state_collection)
+        optimizer = ReceptorOptimizerAnnealing(experiment, model)
         
         if parameter_estimation:
             # automatically estimate the parameters for the simulated annealing

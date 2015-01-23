@@ -8,8 +8,8 @@ from __future__ import division
 
 import numpy as np
 
-from .model_block_1D import (Chain, Chains, ChainCollections, ChainsInteraction,
-                             ChainsInteractionPossibilities)
+from .model_block_1D import (Chain, Chains, ChainCollections, ChainsState,
+                             ChainsModel)
 
 
 
@@ -124,7 +124,7 @@ class TetrisCollections(ChainCollections):
         
         
 
-class TetrisInteraction(ChainsInteraction):
+class TetrisState(ChainsState):
     """ class that represents the interaction between a set of substrates and a
     set of receptors built of tetris blocks.
 
@@ -137,9 +137,8 @@ class TetrisInteraction(ChainsInteraction):
     
     def __init__(self, substrates, receptors, heights, interaction_range=1000,
                  cache=None, energies=None):
-        super(TetrisInteraction, self).__init__(substrates, receptors, heights,
-                                                interaction_range, cache,
-                                                energies)
+        super(TetrisState, self).__init__(substrates, receptors, heights,
+                                          interaction_range, cache, energies)
 
     @property
     def heights(self):
@@ -195,17 +194,17 @@ class TetrisInteraction(ChainsInteraction):
         
         
         
-class TetrisInteractionPossibilities(ChainsInteractionPossibilities):        
+class TetrisModel(ChainsModel):        
     """ class that represents all possible combinations of substrate and
     receptor interactions """
 
     receptor_collection_class = TetrisCollections
-    interaction_class = TetrisInteraction
+    state_class = TetrisState
     
     
-    def __init__(self, substrates, possible_receptors,
-                 interaction_range='full', **kwargs):
-        super(TetrisInteractionPossibilities, self).__init__(
+    def __init__(self, substrates, possible_receptors, interaction_range='full',
+                 **kwargs):
+        super(TetrisModel, self).__init__(
             substrates, possible_receptors, interaction_range, **kwargs
         )
 
