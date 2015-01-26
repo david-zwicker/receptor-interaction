@@ -739,9 +739,6 @@ class ChainsModel(object):
     
     def iterate_states(self):
         """ generates all possible chain interactions """
-        #TODO: try to increase the performance by
-        #    * taking advantage of partially calculated energies
-        
         # create an initial state object
         receptors = self.possible_receptors.choose_random()
         state = self.state_class(self.substrates_data, receptors,

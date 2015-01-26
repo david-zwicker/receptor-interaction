@@ -26,4 +26,4 @@ Class structure
  TODO
  ====
 * 2D carpets as a generalization of chains
-* other experiments (detecting a mixture of substrates)
+* experiments where the concentrations of substrates must be detected

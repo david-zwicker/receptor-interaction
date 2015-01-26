@@ -10,6 +10,7 @@ import contextlib
 import functools
 import sys
 import timeit
+import types
 from collections import Counter
 
 import numpy as np
@@ -105,3 +106,10 @@ def silent_stdout():
     sys.stdout = save_stdout
     
     
+
+def copy_func(f, name=None):
+    """ copies a python function. Taken from
+    http://stackoverflow.com/a/6528148/932593
+    """ 
+    return types.FunctionType(f.func_code, f.func_globals, name or f.func_name,
+        f.func_defaults, f.func_closure)

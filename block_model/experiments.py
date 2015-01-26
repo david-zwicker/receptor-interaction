@@ -12,13 +12,13 @@ import random
 import numpy as np
 import scipy
 
-from .utils import calc_entropy
+from .utils import calc_entropy, copy_func
 
 
 
 class DetectSingleSubstrate(object):
-    """ experiment in which a receptor array is used to identify a substrate
-    out of a given list """ 
+    """ experiment in which a receptor array is used to identify a single
+    substrate out of a given list """ 
     
     def __init__(self, temperature=1, threshold=1):
         """ initialize the experiment with parameters:
@@ -115,7 +115,7 @@ class DetectSingleSubstrate(object):
 
 
     def get_input_dim(self, model_or_state):
-        """ number of different outputs """
+        """ number of different inputs """
         # the 2 is due to the binary output of the receptors
         return model_or_state.num_substrates
     
@@ -133,7 +133,6 @@ class DetectSingleSubstrate(object):
         # maximal mutual information restricted by the output
         MI_output = np.log2(self.get_output_dim(model))
         return min(MI_input, MI_output)
-    
     
     
     
@@ -201,22 +200,14 @@ class DetectMultipleSubstrates(DetectSingleSubstrate):
         return probs
     
     
-    def get_mutual_information(self, state):
-        """ calculate the mutual information for a state """
-        # Note that this function is the exact equivalent of the function
-        # defined in the base class. This copied code is necessary, because we
-        # optimize this function and its subfunctions using monkey patching
-        output = self.get_output_vector(state)
-        
-        # determine the contribution from the output distribution        
-        entropy_o = calc_entropy(output)
-        
-        cnt_s = len(output)
-        return np.log2(cnt_s) - entropy_o/cnt_s    
+    # Copy the `get_mutual_information` method from the base class. This copy
+    # is necessary, because we want to optimize the base method and its sub
+    # functions using monkey patching
+    get_mutual_information = copy_func(DetectSingleSubstrate.get_mutual_information)
 
 
     def get_input_dim(self, model_or_state):
-        """ number of different outputs """
+        """ number of different inputs """
         # the 2 is due to the binary output of the receptors
         return scipy.misc.comb(model_or_state.num_substrates,self.num,
                                exact=True)
