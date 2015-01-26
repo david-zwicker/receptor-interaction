@@ -141,13 +141,13 @@ class DetectMultipleSubstrates(DetectSingleSubstrate):
     """ experiment in which a receptor array is used to identify a mixture of
     substrate out of a given list """ 
     
-    def __init__(self, num=2, temperature=1, threshold=1):
+    def __init__(self, num_substrates=2, temperature=1, threshold=1):
         """ initialize the experiment with parameters:
-        `num` is the number of substrates perceived concurrently
+        `num_substrates` is the number of substrates perceived concurrently
         `temperature` influences the binding probabilities
         `threshold` determines when receptors signal
         """
-        self.num = num
+        self.num = num_substrates
         self.temperature = temperature
         self.threshold = threshold
         

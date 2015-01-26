@@ -33,6 +33,7 @@ def optimize_receptors(parameters):
         # experiment parameters
         'experiment': DetectSingleSubstrate,
     
+        'num_substrates': 1,
         'temperature': 1.,
         'threshold': 1.,
         
@@ -62,18 +63,24 @@ def optimize_receptors(parameters):
     )
 
     # define the experiment
-    experiment = data['experiment'](
-        temperature=data['temperature'], threshold=data['threshold']
-    )
+    if data['experiment'] == DetectMultipleSubstrates:
+        experiment = DetectMultipleSubstrates(
+            num_substrates=data['num_substrates'],
+            temperature=data['temperature'], threshold=data['threshold']
+        )
+    else:
+        experiment = data['experiment'](
+            temperature=data['temperature'], threshold=data['threshold']
+        )
     
-    # optimize the receptors
+    # setup the optimizer 
     optimizer = ReceptorOptimizerAuto(
         experiment, model, time_limit=data['time_limit']*60,
         verbose=True, parameter_estimation=True,
         output=data['optimizer_output']
     )
     
-    # find the best state
+    # find the best receptor combination for the given experiment
     state, MI_numeric = optimizer.optimize()
 
     # return the result    
