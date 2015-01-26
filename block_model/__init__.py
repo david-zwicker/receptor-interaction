@@ -34,6 +34,7 @@ def optimize_receptors(parameters):
         'experiment': DetectSingleSubstrate,
     
         'num_substrates': 1,
+        'concentration_range': (0.01, 1),
         'temperature': 1.,
         'threshold': 1.,
         
@@ -68,6 +69,14 @@ def optimize_receptors(parameters):
             num_substrates=data['num_substrates'],
             temperature=data['temperature'], threshold=data['threshold']
         )
+        
+    elif data['experiment'] == MeasureMultipleSubstrates:
+        experiment = MeasureMultipleSubstrates(            
+            num_substrates=data['num_substrates'],
+            concentration_range=data['concentration_range'],
+            temperature=data['temperature'], threshold=data['threshold']
+        )
+        
     else:
         experiment = data['experiment'](
             temperature=data['temperature'], threshold=data['threshold']

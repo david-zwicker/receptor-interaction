@@ -3,8 +3,8 @@ Created on Jan 12, 2015
 
 @author: David Zwicker <dzwicker@seas.harvard.edu>
 
-Module for handling the interaction between a set of substrates and
-corresponding receptors. Both substrates and receptors are described by chains
+Module for handling the interaction between a set of sub_ids and
+corresponding receptors. Both sub_ids and receptors are described by chains
 of chains, where each chain can have a color. We consider periodic boundary
 conditions, such that these chains are equivalent to necklaces in combinatorics.
 
@@ -467,10 +467,10 @@ class ChainCollections(object):
 
     
 class ChainsState(object):
-    """ class that represents the interaction between a set of substrates and a
+    """ class that represents the interaction between a set of sub_ids and a
     set of receptors.
     
-    This code currently assumes that the substrates are cyclic chains and that
+    This code currently assumes that the sub_ids are cyclic chains and that
     the receptors are linear.
     """
     
@@ -480,12 +480,12 @@ class ChainsState(object):
     def __init__(self, substrates, receptors, colors, cross_talk=0, 
                  interaction_range=1000, cache=None, energies=None):
         
-        self.substrates = substrates
+        self.sub_ids = substrates
         self.receptors = receptors
         self.colors = colors
         self.cross_talk = cross_talk
         # interaction range cannot be larger than the size of the substrate
-        self.interaction_range = min(interaction_range, self.substrates.shape[1])
+        self.interaction_range = min(interaction_range, self.sub_ids.shape[1])
 
         if cache is None:
             self._cache = {}
@@ -505,21 +505,21 @@ class ChainsState(object):
     
         
     def __repr__(self):
-        return ('%s(substrates=%s, receptors=%s, %s=%d, interaction_range=%d)' %
-                (self.__class__.__name__, self.substrates, self.receptors,
+        return ('%s(sub_ids=%s, receptors=%s, %s=%d, interaction_range=%d)' %
+                (self.__class__.__name__, self.sub_ids, self.receptors,
                  self.colors_str, self.colors, self.interaction_range))
         
 
     def __str__(self):
         return ('%s(%d Substrates, %d Receptors, %s=%d, interaction_range=%d)' %
-                (self.__class__.__name__, len(self.substrates),
+                (self.__class__.__name__, len(self.sub_ids),
                  len(self.receptors), self.colors_str, self.colors,
                  self.interaction_range))
         
     
     @property
     def num_substrates(self):
-        return len(self.substrates)
+        return len(self.sub_ids)
 
     
     @property
@@ -536,7 +536,7 @@ class ChainsState(object):
         colors = random.randrange(2, 4)
         interaction_range = random.randrange(5, 10)
 
-        # choose random substrates
+        # choose random sub_ids
         cnt_s = random.randrange(10, 20)
         l_s = random.randrange(10, 20)
         substrates = coll_class(cnt_s, l_s, colors, cyclic=True).choose_random()
@@ -567,18 +567,18 @@ class ChainsState(object):
         
 
     def check_consistency(self):
-        """ consistency check on the number of receptors and substrates """
+        """ consistency check on the number of receptors and sub_ids """
         # TODO: check the length of the receptors and whether they are cyclic
         # or not
         
         if self.interaction_range is not None:
-            assert self.interaction_range <= self.substrates.shape[1]
+            assert self.interaction_range <= self.sub_ids.shape[1]
         
-        # check the supplied substrates
-        unique_substrates = remove_redundant_chains(self.substrates)
-        redundant_count = len(self.substrates) - len(unique_substrates)
+        # check the supplied sub_ids
+        unique_substrates = remove_redundant_chains(self.sub_ids)
+        redundant_count = len(self.sub_ids) - len(unique_substrates)
         if redundant_count:
-            raise RuntimeWarning('There are %d redundant substrates' % 
+            raise RuntimeWarning('There are %d redundant sub_ids' % 
                                  redundant_count)
         
         # check the supplied receptors
@@ -597,25 +597,25 @@ class ChainsState(object):
         
     def copy(self):
         """ copies the current interaction state to allow the receptors to
-        be mutated. The substrates and the cache will be shared between this
+        be mutated. The sub_ids and the cache will be shared between this
         object and its copy """
         if isinstance(self.receptors, np.ndarray):
             receptors = self.receptors.copy()
         else:
             receptors = self.receptors[:]
-        return self.__class__(self.substrates, receptors, self.colors,
+        return self.__class__(self.sub_ids, receptors, self.colors,
                               self.cross_talk, self.interaction_range,
                               self._cache, self.energies.copy())
         
         
     @property
     def substrates2(self):
-        """ return repeated substrates to implement periodic boundary
+        """ return repeated sub_ids to implement periodic boundary
         conditions """
         try:
             return self._cache['substrates2']
         except KeyError:
-            self._cache['substrates2'] = np.c_[self.substrates, self.substrates]
+            self._cache['substrates2'] = np.c_[self.sub_ids, self.sub_ids]
             return self._cache['substrates2']
     
     
@@ -627,7 +627,7 @@ class ChainsState(object):
 
         # count the number of bonds
         if self.interaction_range < l_r:
-            # the substrates interact with part of the receptor
+            # the sub_ids interact with part of the receptor
             rng = self.interaction_range            
             self.energies[:, idx_r] = reduce(np.maximum, (
                 np.sum(self.substrates2[:, i:i + rng] ==
@@ -638,7 +638,7 @@ class ChainsState(object):
             ))
             
         else:
-            # the substrates interact with the full receptor
+            # the sub_ids interact with the full receptor
             rng = l_r
             self.energies[:, idx_r] = reduce(np.maximum, (
                 np.sum(self.substrates2[:, i:i+l_r] == receptor[np.newaxis, :],
@@ -653,7 +653,7 @@ class ChainsState(object):
         
                    
     def update_energies(self):
-        """ calculates all the energies between the substrates and the
+        """ calculates all the energies between the sub_ids and the
         receptors
         """
         # general implementation for receptors of unequal lengths
@@ -688,12 +688,13 @@ class ChainsModel(object):
     
     
     def __init__(self, substrates, possible_receptors, **kwargs):
-        self.substrates = substrates
+        self.sub_ids = substrates
         try:
             self.substrates_data = substrates.to_list()
         except AttributeError:
             self.substrates_data = substrates
             
+        assert possible_receptors.cnt <= 63
         self.possible_receptors = possible_receptors
         
         # determine the parameters for single states
@@ -727,8 +728,8 @@ class ChainsModel(object):
 
 
     def __repr__(self):
-        return ('%s(substrates=%r, receptors=%r, state_parameters=%r)' %
-                (self.__class__.__name__, self.substrates,
+        return ('%s(sub_ids=%r, receptors=%r, state_parameters=%r)' %
+                (self.__class__.__name__, self.sub_ids,
                  self.possible_receptors, self.state_parameters))
         
         
@@ -857,7 +858,7 @@ class ChainsModel(object):
 
     @property
     def num_substrates(self):
-        return len(self.substrates)
+        return len(self.sub_ids)
     
     @property
     def num_receptors(self):
