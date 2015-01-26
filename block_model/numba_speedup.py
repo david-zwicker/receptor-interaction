@@ -68,6 +68,7 @@ def ChainsState_update_energies_receptor_numba(substrates2, receptor,
             out[s] = e1 + e2*bonds_max
     
 
+
 def ChainsState_update_energies_receptor(self, idx_r):
     """ updates the energy of the `idx_r`-th receptor """
     ChainsState_update_energies_receptor_numba(
@@ -136,6 +137,7 @@ def TetrisState_update_energies_receptor_numba(substrates2, receptor,
                         bonds = 1
                 bonds_max = max(bonds_max, bonds)
             out[s] = e1 + e2*bonds_max
+            
             
 
 def TetrisState_update_energies_receptor(self, idx_r):
@@ -208,8 +210,9 @@ def DetectSingleSubstrate_get_output_vector_numba(energies, temperature,
             out[s] = output
 
 
+
 @numba.jit(nopython=True)
-def DetectSingleSubstrate_get_mutual_information_numba(output_vector):
+def get_mutual_information_numba(output_vector):
     """ calculates the mutual information of the sorted output_vector """
     if len(output_vector) == 0:
         return 0
@@ -231,8 +234,9 @@ def DetectSingleSubstrate_get_mutual_information_numba(output_vector):
     return np.log2(cnt_s) - entropy/cnt_s
         
     
+    
 def DetectSingleSubstrate_get_mutual_information(self, state):
-    """ calculate output vector for given receptors """
+    """ calculate mutual information for given state """
     # create or load a temporary array to store the output vector into
     cnt_s = len(state.energies)
     try:
@@ -248,7 +252,105 @@ def DetectSingleSubstrate_get_mutual_information(self, state):
                                                   self.threshold, output_vector)
     # calculate the mutual information
     output_vector.sort()
-    return DetectSingleSubstrate_get_mutual_information_numba(output_vector)
+    return get_mutual_information_numba(output_vector)
+
+
+
+@numba.jit(nopython=True)
+def _handle_substrate_combination(substrates, weights, threshold, probs):
+    """ calculates the output integer for a given list of substrates """
+    # calculate interaction probabilities
+    cnt_r = len(probs)
+    total = 0
+    for r in xrange(cnt_r):
+        probs[r] = 0 #< reset probs array
+        for s in substrates:
+            probs[r] += weights[s, r] #< fix T=0 case
+        total += probs[r]
+        
+    # encode output in single integer
+    weights_thresh = threshold * total
+    output = 0
+    base = 1
+    for r in xrange(cnt_r):
+        # only consider receptors above the threshold; test for
+        #     probs[r]/total >= threshold
+        if probs[r] >= weights_thresh:
+            output += base
+        base *= 2
+    return output        
+        
+        
+        
+@numba.jit(nopython=True)
+def DetectMultipleSubstrates_get_output_vector_numba(weights, num, threshold,
+                                                     probs, indices, out):
+    """ calculate output vector for given receptors.
+    The iteration algorithm has been adapted from itertools.combinations:
+        https://docs.python.org/2/library/itertools.html#itertools.combinations
+    """
+    cnt_s, cnt_r = weights.shape
+    if num > cnt_s:
+        # can't find more substrates than there actually are
+        return
+
+    threshold /= cnt_r #< normalize threshold to number of receptors
+
+    # iterate over all substrate combinations
+    # indices = range(num) #< has been initialized outside this function
+    k = 0
+    out[k] = _handle_substrate_combination(indices, weights, threshold, probs)
+    while True:
+        k += 1
+        for i in xrange(num - 1, -1, -1): #< reversed(range(num))
+            if indices[i] != i + cnt_s - num:
+                break
+        else:
+            return
+        indices[i] += 1
+        for j in xrange(i + 1, num):
+            indices[j] = indices[j-1] + 1
+        out[k] = _handle_substrate_combination(indices, weights, threshold, probs)
+        
+   
+                      
+def DetectMultipleSubstrates_get_mutual_information(self, state):
+    """ calculate mutual information for given state """
+    # create or load a temporary array to store the output vector into
+    input_dim = self.get_input_dim(state)
+    try:
+        output_vector = DetectMultipleSubstrates_get_mutual_information.cache[:input_dim]
+        if len(output_vector) < input_dim:
+            raise AttributeError #< to fall into exception branch
+    except AttributeError:
+        DetectMultipleSubstrates_get_mutual_information.cache = np.empty(input_dim, np.int)
+        output_vector = DetectMultipleSubstrates_get_mutual_information.cache
+    
+    # calculate the output vector
+    probs = np.empty(state.energies.shape[1])    #< temporary array
+    indices = np.arange(self.num, dtype=np.int)  #< temporary array
+    if self.temperature == 0:
+        Emax = state.energies.max(axis=1) #< maximal energy for each substrate
+        weights = (state.energies == Emax[:, np.newaxis]).astype(np.double)
+        # calculate the output vector
+        DetectMultipleSubstrates_get_output_vector_numba(
+            weights, self.num, self.threshold, #< input
+            probs, indices, #< temporary arrays
+            output_vector   #< output array
+        )
+        
+    else:
+        weights = np.exp(state.energies/self.temperature) #< Boltzmann factors
+        # calculate the output vector
+        DetectMultipleSubstrates_get_output_vector_numba(
+            weights, self.num, self.threshold, #< input
+            probs, indices, #< temporary arrays
+            output_vector   #< output array
+        )
+        
+    # calculate the mutual information
+    output_vector.sort()
+    return get_mutual_information_numba(output_vector)
 
 
 #===============================================================================
@@ -299,6 +401,11 @@ class NumbaPatcher(object):
             'test_function': check_return_value,
             'test_arguments': {'state': create_test_state},
         },
+        'experiments.DetectMultipleSubstrates.get_mutual_information': {
+            'numba': DetectMultipleSubstrates_get_mutual_information,
+            'test_function': check_return_value,
+            'test_arguments': {'state': create_test_state},
+        },
     }
     
     saved_original_functions = False
@@ -306,7 +413,7 @@ class NumbaPatcher(object):
 
     
     @classmethod
-    def _backup_original_function(cls):
+    def _save_original_function(cls):
         """ save the original function such that they can be restored later """
         for name, data in cls.numba_methods.iteritems():
             module, class_name, method_name = name.split('.')
@@ -319,7 +426,7 @@ class NumbaPatcher(object):
     def enable(cls):
         """ enables the numba methods """
         if not cls.saved_original_functions:
-            cls._backup_original_function()
+            cls._save_original_function()
         
         for name, data in cls.numba_methods.iteritems():
             module, class_name, method_name = name.split('.')
@@ -353,7 +460,7 @@ class NumbaPatcher(object):
             
     
     @classmethod
-    def prepare_functions(cls, data):
+    def _prepare_functions(cls, data):
         """ prepares the arguments for the two functions that we want to test """
         # prepare the arguments
         test_args = data['test_arguments'].copy()
@@ -384,7 +491,7 @@ class NumbaPatcher(object):
             # check the functions multiple times
             for _ in xrange(repeat):
                 test_obj = class_obj.create_test_instance()
-                func1, func2 = cls.prepare_functions(data)
+                func1, func2 = cls._prepare_functions(data)
                 if not test_func(test_obj, (func1, func2)):
                     print('The numba implementation of `%s` is invalid.' % name)
                     print('Native implementation yields %s' % func1(test_obj))
@@ -410,7 +517,7 @@ class NumbaPatcher(object):
             module, class_name, func_name = name.split('.')
             class_obj = getattr(globals()[module], class_name)
             test_obj = class_obj.create_test_instance()
-            func1, func2 = cls.prepare_functions(data)
+            func1, func2 = cls._prepare_functions(data)
                             
             # check the runtime of the original implementation
             speed1 = estimate_computation_speed(func1, test_obj,

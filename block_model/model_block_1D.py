@@ -516,6 +516,16 @@ class ChainsState(object):
                  len(self.receptors), self.colors_str, self.colors,
                  self.interaction_range))
         
+    
+    @property
+    def num_substrates(self):
+        return len(self.substrates)
+
+    
+    @property
+    def num_receptors(self):
+        return len(self.receptors)
+    
 
     @classmethod
     def create_test_instance(cls):
@@ -664,11 +674,6 @@ class ChainsState(object):
             # choose random receptors of unequal length
             raise NotImplementedError
 
-
-    @property
-    def num_receptors(self):
-        return len(self.receptors)
-    
 
 
 class ChainsModel(object):
@@ -860,9 +865,3 @@ class ChainsModel(object):
     @property
     def num_receptors(self):
         return self.possible_receptors.cnt
-    
-    @property
-    def output_dim(self):
-        """ number of different outputs """
-        # the 2 is due to the binary output of the receptors
-        return 2 ** self.num_receptors
