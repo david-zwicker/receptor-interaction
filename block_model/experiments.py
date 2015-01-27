@@ -95,7 +95,7 @@ class DetectSingleSubstrate(object):
     
     
     def get_output_vector(self, state):
-        """ calculate output vector for given receptors """
+        """ calculate output vector for given input """
         # calculate the resulting binding characteristics
         probs = self.get_binding_probabilities(state)
 
@@ -317,7 +317,7 @@ class MeasureMultipleSubstrates(DetectSingleSubstrate):
     
     
     def get_output_vector(self, state):
-        """ calculate output vector for given receptors """
+        """ calculate output vector for given input """
         # calculate the resulting binding characteristics
         probs = self.get_binding_probabilities(state)
         # threshold to get the response

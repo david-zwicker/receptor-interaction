@@ -746,10 +746,24 @@ class ChainsModel(object):
                                  **self.state_parameters)
         
         # iterate over all receptors and update the state object
-        for receptors in self.possible_receptors:
-            state.receptors = receptors
-            state.update_energies()
-            yield state
+        if self.possible_receptors.cnt > 5:
+            # only update the changed receptors if there are many receptors
+            # Note, that this function would profit from an implementation of
+            # possible_receptors that produces as little change as possible per
+            # iteration step
+            for receptors in self.possible_receptors:
+                changed = np.nonzero(state.receptors != receptors)[0] 
+                state.receptors = receptors
+                for idx_r in changed:
+                    state.update_energies_receptor(idx_r)
+                yield state
+                
+        else:
+            # update all receptors since it is quicker if there are only a few
+            for receptors in self.possible_receptors:
+                state.receptors = receptors
+                state.update_energies()
+                yield state
         
     
     def get_random_state(self):

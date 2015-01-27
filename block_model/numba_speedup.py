@@ -187,7 +187,7 @@ def mutual_information_from_output(self, output_vector):
 @numba.jit(nopython=True)
 def DetectSingleSubstrate_get_output_vector_numba(energies, temperature,
                                                   threshold, out):
-    """ calculate output vector for given receptors """
+    """ calculate output vector for given input """
     cnt_s, cnt_r = energies.shape
      
     # iterate over all substrates
@@ -242,7 +242,7 @@ def DetectSingleSubstrate_get_output_vector_numba(energies, temperature,
     
     
 def DetectSingleSubstrate_get_output_vector(self, state):
-    """ calculate mutual information for given state """
+    """ calculate output vector for given input """
     # create or load a temporary array to store the output vector into
     cnt_s, cnt_r = state.energies.shape
     output_vector = np.empty(cnt_s, np.int)
@@ -256,6 +256,31 @@ def DetectSingleSubstrate_get_output_vector(self, state):
     DetectSingleSubstrate_get_output_vector_numba(state.energies, self.temperature,
                                                   threshold, output_vector)
     return output_vector
+        
+
+
+@numba.jit(nopython=True)
+def get_binding_weights(energies, temperature, weights):
+    """ calculates the weights associated the binding energies """ 
+    cnt_s, cnt_r = energies.shape
+     
+    if temperature == 0:
+        # determine maximal energies for each substrate
+        for s in xrange(cnt_s):
+            Emax = 0
+            for r in xrange(cnt_r):
+                Emax = max(Emax, energies[s, r])
+            for r in xrange(cnt_r):
+                if energies[s, r] == Emax:
+                    weights[s, r] = 1
+                else:
+                    weights[s, r] = 0
+    
+    else:
+        # calculate Boltzmann factors
+        for s in xrange(cnt_s):
+            for r in xrange(cnt_r):
+                weights[s, r] = np.exp(energies[s, r]/temperature)
 
 
 
@@ -282,13 +307,13 @@ def _handle_substrate_combination(substrates, weights, threshold, probs):
             output += base
         base *= 2
     return output        
-        
-        
+
+
         
 @numba.jit(nopython=True)
 def DetectMultipleSubstrates_get_output_vector_numba(weights, num, threshold,
                                                      probs, indices, out):
-    """ calculate output vector for given receptors.
+    """ calculate output vector for given input
     The iteration algorithm has been adapted from itertools.combinations:
         https://docs.python.org/2/library/itertools.html#itertools.combinations
     """
@@ -313,10 +338,10 @@ def DetectMultipleSubstrates_get_output_vector_numba(weights, num, threshold,
             indices[j] = indices[j-1] + 1
         out[k] = _handle_substrate_combination(indices, weights, threshold, probs)
         
-   
-                      
+
+                                      
 def DetectMultipleSubstrates_get_output_vector(self, state):
-    """ calculate mutual information for given state """
+    """ calculate output vector for given input """
     # create or load a temporary array to store the output vector into
     input_dim = self.get_input_dim(state)
     output_vector = np.empty(input_dim, np.int)
@@ -327,16 +352,13 @@ def DetectMultipleSubstrates_get_output_vector(self, state):
     else:
         threshold = self.threshold
     
+    # calculate the binding weights
+    weights = np.empty_like(state.energies) #< temporary array
+    get_binding_weights(state.energies, self.temperature, weights)
+    
     # calculate the output vector
     probs = np.empty(state.energies.shape[1])    #< temporary array
     indices = np.arange(self.num, dtype=np.int)  #< temporary array
-    if self.temperature == 0:
-        Emax = state.energies.max(axis=1) #< maximal energy for each substrate
-        weights = (state.energies == Emax[:, np.newaxis]).astype(np.double)
-    else:
-        weights = np.exp(state.energies/self.temperature) #< Boltzmann factors
-        
-    # calculate the output vector
     DetectMultipleSubstrates_get_output_vector_numba(
         weights, self.num, threshold, #< input
         probs, indices, #< temporary arrays
@@ -348,32 +370,12 @@ def DetectMultipleSubstrates_get_output_vector(self, state):
 
        
 @numba.jit(nopython=True)
-def MeasureMultipleSubstrates_get_output_vector_numba(energies, sub_ids, concs,
-                                                      temperature, threshold,
-                                                      weights, out):
-    """ calculate output vector for given receptors """
-    cnt_s, cnt_r = energies.shape
-     
-    if temperature == 0:
-        # determine maximal energies for each substrate
-        for s in xrange(cnt_s):
-            Emax = 0
-            for r in xrange(cnt_r):
-                Emax = max(Emax, energies[s, r])
-            for r in xrange(cnt_r):
-                if energies[s, r] == Emax:
-                    weights[s, r] = 1
-                else:
-                    weights[s, r] = 0
-    
-    else:
-        # calculate Boltzmann factors
-        for s in xrange(cnt_s):
-            for r in xrange(cnt_r):
-                weights[s, r] = np.exp(energies[s, r]/temperature)
-        
+def MeasureMultipleSubstrates_get_output_vector_numba(weights, sub_ids, concs,
+                                                      threshold, out):
+    """ calculate output vector for given input """
     # iterate over all chosen inputs and calculate output
     cnt_i, num = sub_ids.shape
+    cnt_r = weights.shape[1]
     for i in xrange(cnt_i):
         # iterate over all receptors and evaluate their response
         output = 0
@@ -394,20 +396,20 @@ def MeasureMultipleSubstrates_get_output_vector_numba(energies, sub_ids, concs,
     
     
 def MeasureMultipleSubstrates_get_output_vector(self, state):
-    """ calculate mutual information for given state """
+    """ calculate output vector for given input """
     # choose sub_ids during the first call 
     if self.sub_ids is None:
         self.choose_input(len(state.energies))
 
-    # create or load a temporary array to store the output vector into
-    output_vector = np.empty(self.input_dim, np.int)
-    weights = np.empty_like(state.energies)
+    # calculate the binding weights
+    weights = np.empty_like(state.energies) #< temporary array
+    get_binding_weights(state.energies, self.temperature, weights)
     
     # calculate the output vector
+    output_vector = np.empty(self.input_dim, np.int)
     MeasureMultipleSubstrates_get_output_vector_numba(
-        state.energies, self.sub_ids, self.concs,
-        self.temperature, self.threshold,
-        weights, output_vector
+        weights, self.sub_ids, self.concs,
+        self.threshold, output_vector
     )
     return output_vector
 
@@ -574,7 +576,7 @@ class NumbaPatcher(object):
                     break
                 
             else:
-                # no problems have been found
+                # there were no problems
                 if verbose:
                     print('`%s` has a valid numba implementation.' % name) 
 
