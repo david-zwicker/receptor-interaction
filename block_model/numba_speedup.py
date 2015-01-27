@@ -189,7 +189,6 @@ def DetectSingleSubstrate_get_output_vector_numba(energies, temperature,
                                                   threshold, out):
     """ calculate output vector for given receptors """
     cnt_s, cnt_r = energies.shape
-    threshold /= cnt_r #< normalize threshold to number of receptors
      
     # iterate over all substrates
     for s in xrange(cnt_s):
@@ -245,7 +244,7 @@ def DetectSingleSubstrate_get_output_vector_numba(energies, temperature,
 def DetectSingleSubstrate_get_output_vector(self, state):
     """ calculate mutual information for given state """
     # create or load a temporary array to store the output vector into
-    cnt_s = len(state.energies)
+    cnt_s, cnt_r = state.energies.shape
     try:
         output_vector = DetectSingleSubstrate_get_output_vector.cache[:cnt_s]
         if len(output_vector) < cnt_s:
@@ -254,9 +253,14 @@ def DetectSingleSubstrate_get_output_vector(self, state):
         DetectSingleSubstrate_get_output_vector.cache = np.empty(cnt_s, np.int)
         output_vector = DetectSingleSubstrate_get_output_vector.cache
     
+    if self.threshold == 'auto':
+        threshold =  1/cnt_r #< normalize threshold to number of receptors
+    else:
+        threshold = self.threshold
+    
     # calculate the output vector
     DetectSingleSubstrate_get_output_vector_numba(state.energies, self.temperature,
-                                                  self.threshold, output_vector)
+                                                  threshold, output_vector)
     return output_vector
 
 
@@ -294,12 +298,10 @@ def DetectMultipleSubstrates_get_output_vector_numba(weights, num, threshold,
     The iteration algorithm has been adapted from itertools.combinations:
         https://docs.python.org/2/library/itertools.html#itertools.combinations
     """
-    cnt_s, cnt_r = weights.shape
+    cnt_s = len(weights)
     if num > cnt_s:
         # can't find more substrates than there actually are
         return
-
-    threshold /= cnt_r #< normalize threshold to number of receptors
 
     # iterate over all substrate combinations
     # indices = range(num) #< has been initialized outside this function
@@ -331,27 +333,27 @@ def DetectMultipleSubstrates_get_output_vector(self, state):
         DetectMultipleSubstrates_get_output_vector.cache = np.empty(input_dim, np.int)
         output_vector = DetectMultipleSubstrates_get_output_vector.cache
     
+    if self.threshold == 'auto':
+        cnt_r = state.num_receptors
+        threshold =  1/cnt_r #< normalize threshold to number of receptors
+    else:
+        threshold = self.threshold
+    
     # calculate the output vector
     probs = np.empty(state.energies.shape[1])    #< temporary array
     indices = np.arange(self.num, dtype=np.int)  #< temporary array
     if self.temperature == 0:
         Emax = state.energies.max(axis=1) #< maximal energy for each substrate
         weights = (state.energies == Emax[:, np.newaxis]).astype(np.double)
-        # calculate the output vector
-        DetectMultipleSubstrates_get_output_vector_numba(
-            weights, self.num, self.threshold, #< input
-            probs, indices, #< temporary arrays
-            output_vector   #< output array
-        )
-        
     else:
         weights = np.exp(state.energies/self.temperature) #< Boltzmann factors
-        # calculate the output vector
-        DetectMultipleSubstrates_get_output_vector_numba(
-            weights, self.num, self.threshold, #< input
-            probs, indices, #< temporary arrays
-            output_vector   #< output array
-        )
+        
+    # calculate the output vector
+    DetectMultipleSubstrates_get_output_vector_numba(
+        weights, self.num, threshold, #< input
+        probs, indices, #< temporary arrays
+        output_vector   #< output array
+    )
         
     return output_vector
 

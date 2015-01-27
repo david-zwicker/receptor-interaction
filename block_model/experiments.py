@@ -20,7 +20,7 @@ class DetectSingleSubstrate(object):
     """ experiment in which a receptor array is used to identify a single
     substrate out of a given list """ 
     
-    def __init__(self, temperature=1, threshold=1):
+    def __init__(self, temperature=1, threshold='auto'):
         """ initialize the experiment with parameters:
         `temperature` influences the binding probabilities
         `threshold` determines when receptors signal
@@ -41,11 +41,14 @@ class DetectSingleSubstrate(object):
         """ creates a instance of the class with random parameters """
         obj = cls()
         # choose random parameters
-        if random.randrange(0, 2):
-            obj.temperature = random.randrange(0, 3)
-        else:
+        if random.randrange(2):
             obj.temperature = 0
-        obj.threshold = random.random() + 0.5
+        else:
+            obj.temperature = random.randrange(0, 3)
+        if random.randrange(2):
+            obj.threshold = 'auto'
+        else:
+            obj.threshold = random.random() + 0.5
         return obj
 
     
@@ -93,12 +96,16 @@ class DetectSingleSubstrate(object):
     
     def get_output_vector(self, state):
         """ calculate output vector for given receptors """
-        # TODO: think about introducing self.threshold = 'auto' for testing
         # calculate the resulting binding characteristics
         probs = self.get_binding_probabilities(state)
+
         # threshold to get the response
         cnt_r = state.num_receptors
-        output = (probs >= self.threshold/cnt_r)
+        if self.threshold == 'auto':
+            output = (probs >= 1/cnt_r)
+        else:
+            output = (probs >= self.threshold)
+
         # encode output in single integer
         binary_base = self.binary_base(cnt_r)
         return np.dot(output, binary_base)
@@ -143,7 +150,7 @@ class DetectMultipleSubstrates(DetectSingleSubstrate):
     """ experiment in which a receptor array is used to identify a mixture of
     substrate out of a given list """ 
     
-    def __init__(self, num_substrates=2, temperature=1, threshold=1):
+    def __init__(self, num_substrates=2, temperature=1, threshold='auto'):
         """ initialize the experiment with parameters:
         `num_substrates` is the number of sub_ids perceived concurrently
         `temperature` influences the binding probabilities
@@ -273,6 +280,7 @@ class MeasureMultipleSubstrates(DetectSingleSubstrate):
         obj.cmin = 0.01 * random.random()
         obj.cmax = 0.1 + random.random()
         obj.temperature = random.randrange(0.1, 3) #< temperature must not be 0
+        obj.threshold = random.random()
         return obj
     
     
@@ -310,7 +318,6 @@ class MeasureMultipleSubstrates(DetectSingleSubstrate):
     
     def get_output_vector(self, state):
         """ calculate output vector for given receptors """
-        # TODO: think about introducing self.threshold = 'auto' for testing
         # calculate the resulting binding characteristics
         probs = self.get_binding_probabilities(state)
         # threshold to get the response
@@ -321,7 +328,7 @@ class MeasureMultipleSubstrates(DetectSingleSubstrate):
         # TODO: introduce numba method for 
 
     
-    # Copy the `get_mutual_information` method from the base class. This copy
+    # Copy the `get_output_vector` method from the base class. This copy
     # is necessary, because we want to optimize the base method and its sub
     # functions using monkey patching
     get_output_vector = copy_func(DetectSingleSubstrate.get_output_vector)

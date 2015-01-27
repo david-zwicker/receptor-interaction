@@ -36,7 +36,7 @@ def optimize_receptors(parameters):
         'num_substrates': 1,
         'concentration_range': (0.01, 1),
         'temperature': 1.,
-        'threshold': 1.,
+        'threshold': 'auto',
         
         # optimization parameters
         'time_limit': 1, #< in minutes
