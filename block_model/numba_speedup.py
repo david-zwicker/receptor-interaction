@@ -154,6 +154,37 @@ def TetrisState_update_energies_receptor(self, idx_r):
 
 
 @numba.jit(nopython=True)
+def mutual_information_from_output_numba(output_vector):
+    """ calculates the mutual information of the sorted output_vector """
+    if len(output_vector) == 0:
+        return 0
+    
+    # calculate the entropy in the output vector
+    entropy = 0
+    count = 1
+    last_val = output_vector[0]
+    for val in output_vector[1:]:
+        if val == last_val:
+            count += 1
+        else:
+            entropy += count*np.log2(count)
+            last_val = val
+            count = 1
+    entropy += count*np.log2(count)
+    
+    cnt_s = len(output_vector)
+    return np.log2(cnt_s) - entropy/cnt_s
+
+
+
+def mutual_information_from_output(self, output_vector):
+    """ determine the mutual information from the output distribution """
+    output_vector.sort()
+    return mutual_information_from_output_numba(output_vector)
+        
+        
+        
+@numba.jit(nopython=True)
 def DetectSingleSubstrate_get_output_vector_numba(energies, temperature,
                                                   threshold, out):
     """ calculate output vector for given receptors """
@@ -209,50 +240,24 @@ def DetectSingleSubstrate_get_output_vector_numba(energies, temperature,
                 base *= 2
             out[s] = output
 
-
-
-@numba.jit(nopython=True)
-def get_mutual_information_numba(output_vector):
-    """ calculates the mutual information of the sorted output_vector """
-    if len(output_vector) == 0:
-        return 0
-    
-    # calculate the entropy in the output vector
-    entropy = 0
-    count = 1
-    last_val = output_vector[0]
-    for val in output_vector[1:]:
-        if val == last_val:
-            count += 1
-        else:
-            entropy += count*np.log2(count)
-            last_val = val
-            count = 1
-    entropy += count*np.log2(count)
-    
-    cnt_s = len(output_vector)
-    return np.log2(cnt_s) - entropy/cnt_s
-        
     
     
-def DetectSingleSubstrate_get_mutual_information(self, state):
+def DetectSingleSubstrate_get_output_vector(self, state):
     """ calculate mutual information for given state """
     # create or load a temporary array to store the output vector into
     cnt_s = len(state.energies)
     try:
-        output_vector = DetectSingleSubstrate_get_mutual_information.cache[:cnt_s]
+        output_vector = DetectSingleSubstrate_get_output_vector.cache[:cnt_s]
         if len(output_vector) < cnt_s:
             raise AttributeError #< to fall into exception branch
     except AttributeError:
-        DetectSingleSubstrate_get_mutual_information.cache = np.empty(cnt_s, np.int)
-        output_vector = DetectSingleSubstrate_get_mutual_information.cache
+        DetectSingleSubstrate_get_output_vector.cache = np.empty(cnt_s, np.int)
+        output_vector = DetectSingleSubstrate_get_output_vector.cache
     
     # calculate the output vector
     DetectSingleSubstrate_get_output_vector_numba(state.energies, self.temperature,
                                                   self.threshold, output_vector)
-    # calculate the mutual information
-    output_vector.sort()
-    return get_mutual_information_numba(output_vector)
+    return output_vector
 
 
 
@@ -314,17 +319,17 @@ def DetectMultipleSubstrates_get_output_vector_numba(weights, num, threshold,
         
    
                       
-def DetectMultipleSubstrates_get_mutual_information(self, state):
+def DetectMultipleSubstrates_get_output_vector(self, state):
     """ calculate mutual information for given state """
     # create or load a temporary array to store the output vector into
     input_dim = self.get_input_dim(state)
     try:
-        output_vector = DetectMultipleSubstrates_get_mutual_information.cache[:input_dim]
+        output_vector = DetectMultipleSubstrates_get_output_vector.cache[:input_dim]
         if len(output_vector) < input_dim:
             raise AttributeError #< to fall into exception branch
     except AttributeError:
-        DetectMultipleSubstrates_get_mutual_information.cache = np.empty(input_dim, np.int)
-        output_vector = DetectMultipleSubstrates_get_mutual_information.cache
+        DetectMultipleSubstrates_get_output_vector.cache = np.empty(input_dim, np.int)
+        output_vector = DetectMultipleSubstrates_get_output_vector.cache
     
     # calculate the output vector
     probs = np.empty(state.energies.shape[1])    #< temporary array
@@ -348,9 +353,7 @@ def DetectMultipleSubstrates_get_mutual_information(self, state):
             output_vector   #< output array
         )
         
-    # calculate the mutual information
-    output_vector.sort()
-    return get_mutual_information_numba(output_vector)
+    return output_vector
 
 
 #===============================================================================
@@ -362,6 +365,10 @@ def create_test_state():
     """ creates a random test state """
     return model_block_1D.ChainsState.create_test_instance()
 
+
+def create_output_vector():
+    """ create a random output vector """
+    return np.random.randint(0, 10, 100)
 
 
 def check_energies(obj, (func1, func2)):
@@ -396,13 +403,18 @@ class NumbaPatcher(object):
             'test_function': check_energies,
             'test_arguments': {'idx_r': 0},
         },
-        'experiments.DetectSingleSubstrate.get_mutual_information': {
-            'numba': DetectSingleSubstrate_get_mutual_information,
+        'experiments.DetectSingleSubstrate.mutual_information_from_output': {
+            'numba': mutual_information_from_output,
+            'test_function': check_return_value,
+            'test_arguments': {'output_vector': create_output_vector},
+        },
+        'experiments.DetectSingleSubstrate.get_output_vector': {
+            'numba': DetectSingleSubstrate_get_output_vector,
             'test_function': check_return_value,
             'test_arguments': {'state': create_test_state},
         },
-        'experiments.DetectMultipleSubstrates.get_mutual_information': {
-            'numba': DetectMultipleSubstrates_get_mutual_information,
+        'experiments.DetectMultipleSubstrates.get_output_vector': {
+            'numba': DetectMultipleSubstrates_get_output_vector,
             'test_function': check_return_value,
             'test_arguments': {'state': create_test_state},
         },

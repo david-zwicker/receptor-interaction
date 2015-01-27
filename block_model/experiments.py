@@ -103,16 +103,19 @@ class DetectSingleSubstrate(object):
         binary_base = self.binary_base(cnt_r)
         return np.dot(output, binary_base)
         
+            
+    def mutual_information_from_output(self, output_vector):
+        """ determine the mutual information from the output distribution """        
+        entropy_o = calc_entropy(output_vector)
+        
+        cnt_i = len(output_vector)
+        return np.log2(cnt_i) - entropy_o/cnt_i    
+        
     
     def get_mutual_information(self, state):
         """ calculate the mutual information for a state """
         output = self.get_output_vector(state)
-        
-        # determine the contribution from the output distribution        
-        entropy_o = calc_entropy(output)
-        
-        cnt_s = len(output)
-        return np.log2(cnt_s) - entropy_o/cnt_s    
+        return self.mutual_information_from_output(output)
 
 
     def get_input_dim(self, model_or_state):
@@ -201,10 +204,10 @@ class DetectMultipleSubstrates(DetectSingleSubstrate):
         return probs
     
     
-    # Copy the `get_mutual_information` method from the base class. This copy
+    # Copy the `get_output_vector` method from the base class. This copy
     # is necessary, because we want to optimize the base method and its sub
     # functions using monkey patching
-    get_mutual_information = copy_func(DetectSingleSubstrate.get_mutual_information)
+    get_output_vector = copy_func(DetectSingleSubstrate.get_output_vector)
 
 
     def get_input_dim(self, model_or_state):
@@ -315,12 +318,13 @@ class MeasureMultipleSubstrates(DetectSingleSubstrate):
         # encode output in single integer
         binary_base = self.binary_base(state.num_receptors)
         return np.dot(output, binary_base)
-    
+        # TODO: introduce numba method for 
+
     
     # Copy the `get_mutual_information` method from the base class. This copy
     # is necessary, because we want to optimize the base method and its sub
     # functions using monkey patching
-    get_mutual_information = copy_func(DetectSingleSubstrate.get_mutual_information)
+    get_output_vector = copy_func(DetectSingleSubstrate.get_output_vector)
 
 
     def get_input_dim(self, model_or_state):
