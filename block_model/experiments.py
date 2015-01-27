@@ -259,10 +259,11 @@ class MeasureMultipleSubstrates(DetectSingleSubstrate):
         
     def choose_input(self, cnt_s):
         """ choose random input """
-        # choose the sub_ids 
-        self.sub_ids = np.array([np.random.choice(cnt_s, self.num)
-                                 for _ in xrange(self.input_dim)],
-                                np.int)
+        # choose the substrates that will appear in the input
+        sub_ids = [np.random.choice(cnt_s, self.num, replace=False)
+                   for _ in xrange(self.input_dim)]
+        self.sub_ids = np.array(sub_ids, np.int)
+        # choose the associated concentrations
         lmin, lmax = np.log(self.cmin), np.log(self.cmax)
         lconcs = np.random.uniform(lmin, lmax, (self.input_dim, self.num))
         self.concs = np.exp(lconcs)
@@ -275,12 +276,11 @@ class MeasureMultipleSubstrates(DetectSingleSubstrate):
     @classmethod
     def create_test_instance(cls):
         """ creates a instance of the class with random parameters """
-        obj = super(DetectMultipleSubstrates, cls).create_test_instance()
-        obj.num = random.randrange(1, 4)
-        obj.cmin = 0.01 * random.random()
-        obj.cmax = 0.1 + random.random()
-        obj.temperature = random.randrange(0.1, 3) #< temperature must not be 0
-        obj.threshold = random.random()
+        obj = cls(num_substrates=random.randrange(1, 4),
+                  concentration_range=(0.01 * random.random(),
+                                       0.1 + random.random()),
+                  temperature=0.1 + 3*random.random(),
+                  threshold=random.random())
         return obj
     
     
@@ -325,13 +325,6 @@ class MeasureMultipleSubstrates(DetectSingleSubstrate):
         # encode output in single integer
         binary_base = self.binary_base(state.num_receptors)
         return np.dot(output, binary_base)
-        # TODO: introduce numba method for 
-
-    
-    # Copy the `get_output_vector` method from the base class. This copy
-    # is necessary, because we want to optimize the base method and its sub
-    # functions using monkey patching
-    get_output_vector = copy_func(DetectSingleSubstrate.get_output_vector)
 
 
     def get_input_dim(self, model_or_state):

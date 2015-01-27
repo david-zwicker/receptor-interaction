@@ -245,13 +245,7 @@ def DetectSingleSubstrate_get_output_vector(self, state):
     """ calculate mutual information for given state """
     # create or load a temporary array to store the output vector into
     cnt_s, cnt_r = state.energies.shape
-    try:
-        output_vector = DetectSingleSubstrate_get_output_vector.cache[:cnt_s]
-        if len(output_vector) < cnt_s:
-            raise AttributeError #< to fall into exception branch
-    except AttributeError:
-        DetectSingleSubstrate_get_output_vector.cache = np.empty(cnt_s, np.int)
-        output_vector = DetectSingleSubstrate_get_output_vector.cache
+    output_vector = np.empty(cnt_s, np.int)
     
     if self.threshold == 'auto':
         threshold =  1/cnt_r #< normalize threshold to number of receptors
@@ -325,13 +319,7 @@ def DetectMultipleSubstrates_get_output_vector(self, state):
     """ calculate mutual information for given state """
     # create or load a temporary array to store the output vector into
     input_dim = self.get_input_dim(state)
-    try:
-        output_vector = DetectMultipleSubstrates_get_output_vector.cache[:input_dim]
-        if len(output_vector) < input_dim:
-            raise AttributeError #< to fall into exception branch
-    except AttributeError:
-        DetectMultipleSubstrates_get_output_vector.cache = np.empty(input_dim, np.int)
-        output_vector = DetectMultipleSubstrates_get_output_vector.cache
+    output_vector = np.empty(input_dim, np.int)
     
     if self.threshold == 'auto':
         cnt_r = state.num_receptors
@@ -355,6 +343,72 @@ def DetectMultipleSubstrates_get_output_vector(self, state):
         output_vector   #< output array
     )
         
+    return output_vector
+
+
+       
+@numba.jit(nopython=True)
+def MeasureMultipleSubstrates_get_output_vector_numba(energies, sub_ids, concs,
+                                                      temperature, threshold,
+                                                      weights, out):
+    """ calculate output vector for given receptors """
+    cnt_s, cnt_r = energies.shape
+     
+    if temperature == 0:
+        # determine maximal energies for each substrate
+        for s in xrange(cnt_s):
+            Emax = 0
+            for r in xrange(cnt_r):
+                Emax = max(Emax, energies[s, r])
+            for r in xrange(cnt_r):
+                if energies[s, r] == Emax:
+                    weights[s, r] = 1
+                else:
+                    weights[s, r] = 0
+    
+    else:
+        # calculate Boltzmann factors
+        for s in xrange(cnt_s):
+            for r in xrange(cnt_r):
+                weights[s, r] = np.exp(energies[s, r]/temperature)
+        
+    # iterate over all chosen inputs and calculate output
+    cnt_i, num = sub_ids.shape
+    for i in xrange(cnt_i):
+        # iterate over all receptors and evaluate their response
+        output = 0
+        base = 1
+        for r in xrange(cnt_r):
+            prob = 0
+            # iterate over all substrates in the specific input
+            for j in xrange(num):
+                prob += weights[sub_ids[i, j], r] * concs[i, j]
+                 
+            if prob > threshold:
+                # receptors response
+                output += base
+            base *= 2
+                 
+        out[i] = output
+    
+    
+    
+def MeasureMultipleSubstrates_get_output_vector(self, state):
+    """ calculate mutual information for given state """
+    # choose sub_ids during the first call 
+    if self.sub_ids is None:
+        self.choose_input(len(state.energies))
+
+    # create or load a temporary array to store the output vector into
+    output_vector = np.empty(self.input_dim, np.int)
+    weights = np.empty_like(state.energies)
+    
+    # calculate the output vector
+    MeasureMultipleSubstrates_get_output_vector_numba(
+        state.energies, self.sub_ids, self.concs,
+        self.temperature, self.threshold,
+        weights, output_vector
+    )
     return output_vector
 
 
@@ -417,6 +471,11 @@ class NumbaPatcher(object):
         },
         'experiments.DetectMultipleSubstrates.get_output_vector': {
             'numba': DetectMultipleSubstrates_get_output_vector,
+            'test_function': check_return_value,
+            'test_arguments': {'state': create_test_state},
+        },
+        'experiments.MeasureMultipleSubstrates.get_output_vector': {
+            'numba': MeasureMultipleSubstrates_get_output_vector,
             'test_function': check_return_value,
             'test_arguments': {'state': create_test_state},
         },
