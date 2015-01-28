@@ -116,10 +116,10 @@ def optimize_receptors(parameters):
         perc_done = 100*jobs_done/job['num_jobs']
         sec_left = jobs_left*(time.time() - job['start_time'])/jobs_done
         time_left = datetime.timedelta(seconds=int(sec_left))
-        print('-' * 52)
-        print('Runtime estimate: %3d%% finished - Time left: %s' %
-              (perc_done, time_left))
-        print('-' * 52)
+        print('-' * 60)
+        print('Runtime estimate: %3d%% finished (%d/%d) - Time left: %s' %
+              (perc_done, jobs_done, job['num_jobs'], time_left))
+        print('-' * 60)
     
     return result
 
@@ -147,17 +147,18 @@ def optimize_receptors_many(parameters_base, parameters_vary, result_file=None,
     
     # count the number of jobs
     num_jobs = 1
-    for params in parameters_vary.itervalues():
+    parameters_vary_values = parameters_vary.values()
+    for params in parameters_vary_values:
         num_jobs *= len(params) 
             
     # prepare the data for all the jobs
     jobs = []
     p_keys = parameters_vary.keys()
-    for k, p_values in enumerate(itertools.product(*parameters_vary.values())):
+    for j_id, p_values in enumerate(itertools.product(*parameters_vary_values)):
         job_data = parameters_base.copy()
         for key, value in itertools.izip(p_keys, p_values):
             job_data[key] = value
-        job_data['job_data'] = {'id': k,
+        job_data['job_data'] = {'id': j_id,
                                 'num_jobs': num_jobs,
                                 'processes': processes,
                                 'start_time': time.time(),}
