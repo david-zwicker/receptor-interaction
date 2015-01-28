@@ -113,13 +113,14 @@ def optimize_receptors(parameters):
         # conservative estimate of jobs that have finished and that are left
         jobs_done = max(1, job['id'] - job['processes'] + 1)
         jobs_left = job['num_jobs'] - job['id'] - 1
+        # calculate quantities to show
         perc_done = 100*jobs_done/job['num_jobs']
         sec_left = jobs_left*(time.time() - job['start_time'])/jobs_done
         time_left = datetime.timedelta(seconds=int(sec_left))
-        print('-' * 60)
-        print('Runtime estimate: %3d%% finished (%d/%d) - Time left: %s' %
-              (perc_done, jobs_done, job['num_jobs'], time_left))
-        print('-' * 60)
+        # output information
+        output = ('Runtime estimate: %3d%% finished (%d/%d) - Time left: %s' %
+                  (perc_done, jobs_done, job['num_jobs'], time_left))
+        print('-'*len(output) + '\n' + output + '\n' + '-'*len(output))
     
     return result
 
