@@ -7,9 +7,7 @@ Created on Nov 26, 2014
 from __future__ import division
 
 import numpy as np
-from scipy import special, optimize
-
-from .utils import random_log_uniform
+from scipy import optimize
 
 
 
@@ -55,7 +53,8 @@ class ReceptorTheory(object):
     def concentration_single(self, actv):
         """ returns the concentration of a single odorant given the fraction of
         excited glomeruli """
-        return 1/self.dist.ppf(1 - actv)
+        with np.errstate(divide='ignore'):
+            return 1/self.dist.ppf(1 - actv)
 
 
     def concentration_typical(self):
@@ -74,15 +73,16 @@ class ReceptorTheory(object):
         return self.concentration_single(1)
 
 
-    def sensitivity_single(self, conc):
+    def delta_single(self, conc):
         """ returns the minimal concentration necessary to excite a glomerulus
         if the odorant is already present at concentration `conc` """
-        return  conc**2/(self.Nr * self.dist.pdf(1/conc))
+        with np.errstate(divide='ignore'):
+            return conc**2/(self.Nr * self.dist.pdf(1/conc))
 
 
     def resolution_single(self, conc):
         """ returns the resolution at concentration `conc` """
-        return conc/self.sensitivity_single(conc)
+        return conc/self.delta_single(conc)
 
 
     #===========================================================================
@@ -90,20 +90,32 @@ class ReceptorTheory(object):
     #===========================================================================
 
 
-    def overlap_mixture(self, conc):
+    def overlap_mixture(self, cvec):
         """ returns the fraction of glomeruli that would be activated by any of 
         the odorants in the given concentration field """
-        conc = np.asarray(conc)
-        actv = self.activity_per_odor(conc)
-        return np.prod(actv, axis=-1)
+        cvec = np.asarray(cvec)
+        assert cvec.shape[-1] == self.Ns
+        return np.prod(self.activity_single(cvec), axis=-1)
 
 
-    def activity_mixture(self, conc):
+    def activity_mixture(self, cvec):
         """ returns the fraction of glomeruli activated by the given 
         concentration field """
-        conc = np.asarray(conc)
-        return 1 - np.prod(self.dist.sf(1/conc), axis=-1)
+        cvec = np.asarray(cvec)
+        assert cvec.shape[-1] == self.Ns
+        return 1 - np.prod(self.activity_single(cvec), axis=-1)
     
+
+    def num_active_mixture(self, cvec):
+        """ returns the number of active receptors for the given concentration
+        vector """
+        return self.Nr * self.activity_mixture(cvec)
+        
+
+    #===========================================================================
+    # OLD METHODS
+    #===========================================================================
+
 
     def theory_excitation_threshold0(self, conc=0, add_recep=1):
         """ calculates how much the concentration of component 0 must be 
