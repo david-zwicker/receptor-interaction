@@ -25,7 +25,7 @@ class ReceptorOptimizerBruteForce(object):
             output. If output <= 0, no output is done
         """
         self.experiment = experiment
-        self.model = model
+        self.energies = model
         self.start = 0 #< start time
         self.output = output
         
@@ -48,11 +48,11 @@ class ReceptorOptimizerBruteForce(object):
         with the achieved mutual information.
         Extra information about the optimization procedure is stored in the
         `info` dictionary of this object """
-        self.info['states_total'] = self.model.num_states
+        self.info['states_total'] = self.energies.num_states
 
         state_best, MI_best = None, -1
         self.start = time.time()
-        for step, state in enumerate(self.model.iterate_states()):
+        for step, state in enumerate(self.energies.iterate_states()):
             MI = self.experiment.get_mutual_information(state)
             if MI > MI_best:
                 state_best, MI_best = state.copy(), MI
@@ -87,7 +87,7 @@ class ReceptorOptimizerAnnealing(Annealer):
         """ `state_collection` must be a class that handles all possible states
         """
         self.experiment = experiment
-        self.model = model
+        self.energies = model
         initial_state = model.get_random_state()
         super(ReceptorOptimizerAnnealing, self).__init__(initial_state)
 
@@ -96,7 +96,7 @@ class ReceptorOptimizerAnnealing(Annealer):
 
     def move(self):
         """ change a single bit in any of the receptor vectors """
-        self.model.mutate_state(self.state)
+        self.energies.mutate_state(self.state)
         
         
     def energy(self):

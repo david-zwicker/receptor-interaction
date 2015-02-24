@@ -22,13 +22,15 @@ import model_tetris_1D  # @UnusedImport
 import experiments  # @UnusedImport
 from .utils import calc_entropy  # @UnusedImport
 
+NUMBA_NOPYTHON = True #< globally decide whether we use the nopython mode
+
 
 #===============================================================================
 # NUMBA DEFINITIONS FOR MODELS
 #===============================================================================
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=NUMBA_NOPYTHON)
 def ChainsState_update_energies_receptor_numba(substrates2, receptor, 
                                                interaction_range, cross_talk,
                                                out):
@@ -78,7 +80,7 @@ def ChainsState_update_energies_receptor(self, idx_r):
 
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=NUMBA_NOPYTHON)
 def TetrisState_update_energies_receptor_numba(substrates2, receptor,
                                                interaction_range, cross_talk,
                                                out):
@@ -153,7 +155,7 @@ def TetrisState_update_energies_receptor(self, idx_r):
 #===============================================================================
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=NUMBA_NOPYTHON)
 def mutual_information_from_output_numba(output_vector):
     """ calculates the mutual information of the sorted output_vector """
     if len(output_vector) == 0:
@@ -184,7 +186,7 @@ def mutual_information_from_output(self, output_vector):
         
         
         
-@numba.jit(nopython=True)
+@numba.jit(nopython=NUMBA_NOPYTHON)
 def DetectSingleSubstrate_get_output_vector_numba(energies, temperature,
                                                   threshold, out):
     """ calculate output vector for given input """
@@ -259,7 +261,7 @@ def DetectSingleSubstrate_get_output_vector(self, state):
         
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=NUMBA_NOPYTHON)
 def get_binding_weights(energies, temperature, weights):
     """ calculates the weights associated the binding energies """ 
     cnt_s, cnt_r = energies.shape
@@ -284,7 +286,7 @@ def get_binding_weights(energies, temperature, weights):
 
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=NUMBA_NOPYTHON)
 def _handle_substrate_combination(substrates, weights, threshold, probs):
     """ calculates the output integer for a given list of substrates """
     # calculate interaction probabilities
@@ -310,7 +312,7 @@ def _handle_substrate_combination(substrates, weights, threshold, probs):
 
 
         
-@numba.jit(nopython=True)
+@numba.jit(nopython=NUMBA_NOPYTHON)
 def DetectMultipleSubstrates_get_output_vector_numba(weights, num, threshold,
                                                      probs, indices, out):
     """ calculate output vector for given input
@@ -369,7 +371,7 @@ def DetectMultipleSubstrates_get_output_vector(self, state):
 
 
        
-@numba.jit(nopython=True)
+@numba.jit(nopython=NUMBA_NOPYTHON)
 def MeasureMultipleSubstrates_get_output_vector_numba(weights, sub_ids, concs,
                                                       threshold, out):
     """ calculate output vector for given input """
